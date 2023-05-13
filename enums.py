@@ -79,7 +79,6 @@ class ErrorCodes(myEnum):
     registerAgentExistsError = 4109
     cooldownConflictError = 4000
     waypointNoAccessError = 4001
-
 class ContractType(myEnum):
     PROCUREMENT="PROCUREMENT"
     TRANSPORT="TRANSPORT"
@@ -548,4 +547,3 @@ class TradeSymbol(myEnum):
     MOUNT_MISSILE_LAUNCHER_I="MOUNT_MISSILE_LAUNCHER_I"
     MOUNT_TURRET_I="MOUNT_TURRET_I"
 # endregion
-
