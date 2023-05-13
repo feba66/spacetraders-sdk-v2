@@ -1,0 +1,4 @@
+ratelimit
+requests
+python-dotenv
+psycopg2
