@@ -10,7 +10,7 @@ py api.py
 
 - [ ] redo all endpoints
 - [x] logging
-- [/] database connections
+- [ ] database connections
 - [ ] error handling
 
 ## Documentation for API Endpoints
