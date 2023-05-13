@@ -303,6 +303,19 @@ class SpaceTraders:
         with self.db_lock:
             self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP,self.ships[shipSymbol]))
         return self.ships[shipSymbol]
+    def Purchase_Ship(self, shipType, waypointSymbol):
+        path = "/my/ships"
+        r = self.my_req(path, "post", data={"shipType": shipType, "waypointSymbol": waypointSymbol})
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        self.agent = Agent(data["agent"])
+        ship = Ship(data["ship"])
+        with self.db_lock:
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP,ship))
+        self.ships[ship.symbol] = ship
+        return ship
     def Init_Systems(self):
         path = "/systems.json"
 

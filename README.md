@@ -29,7 +29,7 @@ Class          | HTTP request  | Description   | Implemented
 | *Factions*   | **get** /factions | List all discovered factions in the game. | 
 | *Factions*   | **get** /factions/{factionSymbol} | View the details of a faction. | 
 | *Fleet*      | **get** /my/ships | Retrieve all of your ships. | statekeeping & db
-| *Fleet*      | **post** /my/ships | Purchase a ship | 
+| *Fleet*      | **post** /my/ships | Purchase a ship | statekeeping & half db
 | *Fleet*      | **get** /my/ships/{shipSymbol} | Retrieve the details of your ship. |  statekeeping & db
 | *Fleet*      | **get** /my/ships/{shipSymbol}/cargo | Retrieve the cargo of your ship. |  
 | *Fleet*      | **post** /my/ships/{shipSymbol}/orbit | Orbit Ship | 
