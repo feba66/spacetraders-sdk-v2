@@ -1,2 +1,60 @@
 # spacetraders-sdk-v2
 Total rewrite to use no generated code
+
+## Installation & Usage
+```sh
+pip install -r requirements.txt
+py api.py
+```
+## TODO
+
+- [ ] redo all endpoints
+- [x] logging
+- [/] database connections
+- [ ] error handling
+
+## Documentation for API Endpoints
+
+Class        | HTTP request  | Description   | Implemented
+------------ | ------------- | ------------- | -------------
+|            | **post** /register | Register New Agent | 
+ *Agents*     | **get** /my/agent | Fetch your agent's details. | 
+ *Contracts*  | **post** /my/contracts/{contractId}/accept | Accept a contract. | 
+ *Contracts*  | **post** /my/contracts/{contractId}/deliver | Deliver cargo on a given contract. | 
+ *Contracts*  | **post** /my/contracts/{contractId}/fulfill | Fulfill a contract | 
+ *Contracts*  | **get** /my/contracts/{contractId} | Get the details of a contract by ID. | 
+ *Contracts*  | **get** /my/contracts | List all of your contracts. | 
+ *Factions*   | **get** /factions | List all discovered factions in the game. | 
+ *Factions*   | **get** /factions/{factionSymbol} | View the details of a faction. | 
+ *Fleet*      | **get** /my/ships | Retrieve all of your ships. | 
+ *Fleet*      | **post** /my/ships | Purchase a ship | 
+ *Fleet*      | **get** /my/ships/{shipSymbol} | Retrieve the details of your ship. |  
+ *Fleet*      | **get** /my/ships/{shipSymbol}/cargo | Retrieve the cargo of your ship. |  
+ *Fleet*      | **post** /my/ships/{shipSymbol}/orbit | Orbit Ship | 
+ *Fleet*      | **post** /my/ships/{shipSymbol}/refine | Ship Refine | 
+ *Fleet*      | **post** /my/ships/{shipSymbol}/chart | Create Chart | 
+ *Fleet*      | **get** /my/ships/{shipSymbol}/cooldown | Get Ship Cooldown | 
+ *Fleet*      | **post** /my/ships/{shipSymbol}/dock | Dock Ship | 
+ *Fleet*      | **post** /my/ships/{shipSymbol}/survey | Create Survey | 
+ *Fleet*      | **post** /my/ships/{shipSymbol}/extract | Extract Resources | 
+ *Fleet*      | **post** /my/ships/{shipSymbol}/jettison | Jettison Cargo | 
+ *Fleet*      | **post** /my/ships/{shipSymbol}/jump | Jump Ship | 
+ *Fleet*      | **post** /my/ships/{shipSymbol}/navigate | Navigate Ship | 
+ *Fleet*      | **patch** /my/ships/{shipSymbol}/nav | Patch Ship Nav | 
+ *Fleet*      | **get** /my/ships/{shipSymbol}/nav | Get Ship Nav | 
+ *Fleet*      | **post** /my/ships/{shipSymbol}/warp | Warp Ship | 
+ *Fleet*      | **post** /my/ships/{shipSymbol}/sell | Sell Cargo | 
+ *Fleet*      | **post** /my/ships/{shipSymbol}/scan/systems | Scan Systems | 
+ *Fleet*      | **post** /my/ships/{shipSymbol}/scan/waypoints | Scan Waypoints | 
+ *Fleet*      | **post** /my/ships/{shipSymbol}/scan/ships | Scan Ships | 
+ *Fleet*      | **post** /my/ships/{shipSymbol}/refuel | Refuel Ship | 
+ *Fleet*      | **post** /my/ships/{shipSymbol}/purchase | Purchase Cargo | 
+ *Fleet*      | **post** /my/ships/{shipSymbol}/transfer | Transfer Cargo | 
+ *Systems*    | **get** /systems | List Systems | 
+ *Systems*    | **get** /systems.json | Get all systems. | 
+ *Systems*    | **get** /systems/{systemSymbol} | Get System | 
+ *Systems*    | **get** /systems/{systemSymbol}/waypoints | List Waypoints | 
+ *Systems*    | **get** /systems/{systemSymbol}/waypoints/{waypointSymbol} | Get Waypoint | 
+ *Systems*    | **get** /systems/{systemSymbol}/waypoints/{waypointSymbol}/market | Get Market | 
+ *Systems*    | **get** /systems/{systemSymbol}/waypoints/{waypointSymbol}/shipyard | Get Shipyard | 
+ *Systems*    | **get** /systems/{systemSymbol}/waypoints/{waypointSymbol}/jump-gate | Get Jump Gate | 
