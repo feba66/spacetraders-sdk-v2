@@ -260,15 +260,6 @@ class SpaceTraders:
 
 
     # region added
-    def Status(self):
-        path ="/"
-        r = self.my_req(path, "get")
-        try:
-            with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.LEADERBOARD,r.json()["leaderboards"]))
-        except:
-            pass
-        return r
     # endregion
 
     # region statekeeping
@@ -307,6 +298,15 @@ class SpaceTraders:
     # endregion
 
     # region done
+    def Status(self):
+        path ="/"
+        r = self.my_req(path, "get")
+        try:
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.LEADERBOARD,r.json()["leaderboards"]))
+        except:
+            pass
+        return r
     def Get_Ships(self, page=1, limit=20):
         path = "/my/ships"
         r = self.my_req(path+f"?page={page}&limit={limit}", "get")
@@ -380,12 +380,20 @@ class SpaceTraders:
 if __name__ == "__main__":
     
     st = SpaceTraders()
-    pprint(json.loads(st.Status().text))
+    old_j=json.loads(st.Status().text)
+    time.sleep(5)
+    while True:
+        j = json.loads(st.Status().text)
+        if j!=old_j:
+            pprint(j)
+            old_j=j
+            time.sleep(30*60-30)
+        time.sleep(15)
     st.Login(os.getenv("TOKEN"))
     # st.Get_Market("X1-DF55-17335A")
     # pprint(st.Register("feba66","ASTRO"))
     # pprint(st.Get_Agent())
-    pprint(st.Get_Ships())
-    st.Init_Systems()
+    # pprint(st.Get_Ships())
+    # st.Init_Systems()
     print("done")
     time.sleep(2)
