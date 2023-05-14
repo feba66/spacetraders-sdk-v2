@@ -18,7 +18,7 @@ py api.py
 
 Class          | HTTP request  | Description   | Implemented
 ------------   | ------------- | ------------- | -------------
-|              | **get** /     | Status        | added
+|              | **get** /     | Status        | leaderboard db
 |              | **post** /register | Register New Agent | statekeeping
 | *Agents*     | **get** /my/agent | Fetch your agent's details. | statekeeping
 | *Contracts*  | **post** /my/contracts/{contractId}/accept | Accept a contract. | 

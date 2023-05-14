@@ -1,4 +1,5 @@
 
+from datetime import datetime
 from math import ceil
 import threading
 import time
@@ -21,7 +22,8 @@ class Queue_Obj_Type(Enum):
     MARKET=3,
     SHIPYARD=4,
     SHIP=5,
-    CONSUMPTION=6
+    CONSUMPTION=6,
+    LEADERBOARD=7
 @dataclass
 class Queue_Obj:
     type:Queue_Obj_Type
@@ -115,6 +117,9 @@ class SpaceTraders:
         cur.execute("""CREATE TABLE IF NOT EXISTS SHIPCARGOS (SYMBOL CHARACTER varying, GOOD CHARACTER varying, UNITS integer, PRIMARY KEY (SYMBOL, GOOD));""")
         cur.execute("""CREATE TABLE IF NOT EXISTS SHIPFUEL (SYMBOL CHARACTER varying, FUEL integer, CAPACITY integer, PRIMARY KEY (SYMBOL));""")
         cur.execute("""CREATE TABLE IF NOT EXISTS SHIPCONSUMTION (SYMBOL CHARACTER varying, AMOUNT integer, DEPARTEDFROM CHARACTER varying, DESTINATION CHARACTER varying, FLIGHTMODE CHARACTER varying, FLIGHTTIME integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (SYMBOL, TIMESTAMP));""")
+        
+        cur.execute("""CREATE TABLE IF NOT EXISTS CREDITLEADERBOARD (AGENTSYMBOL CHARACTER varying, CREDITS integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS CHARTLEADERBOARD (AGENTSYMBOL CHARACTER varying, CHARTCOUNT integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));""")
         conn.commit()
         # endregion
 
@@ -207,6 +212,23 @@ class SpaceTraders:
                         conn.commit()
                     elif q_obj.type == Queue_Obj_Type.CONSUMPTION:
                         pass
+                    elif q_obj.type == Queue_Obj_Type.LEADERBOARD:
+                        lb:dict = q_obj.data
+                        temp = []
+                        for c in lb["mostCredits"]:
+                            temp.extend([c["agentSymbol"],c["credits"],datetime.strftime(datetime.utcnow(),self.FORMAT_STR)])
+                        cur.execute(f"""INSERT INTO CREDITLEADERBOARD (AGENTSYMBOL, CREDITS, TIMESTAMP)
+                            VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])}
+                            ON CONFLICT (AGENTSYMBOL, TIMESTAMP) DO NOTHING""",
+                                list(temp))
+                        temp = []
+                        for c in lb["mostSubmittedCharts"]:
+                            temp.extend([c["agentSymbol"],c["chartCount"],datetime.strftime(datetime.utcnow(),self.FORMAT_STR)])
+                        cur.execute(f"""INSERT INTO CHARTLEADERBOARD (AGENTSYMBOL, CHARTCOUNT, TIMESTAMP)
+                            VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])}
+                            ON CONFLICT (AGENTSYMBOL, TIMESTAMP) DO NOTHING""",
+                                list(temp))
+                        conn.commit()
                 # TODO add the msg to db
                 # TODO add the queue-ing to all functions
             else:
@@ -241,6 +263,11 @@ class SpaceTraders:
     def Status(self):
         path ="/"
         r = self.my_req(path, "get")
+        try:
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.LEADERBOARD,r.json()["leaderboards"]))
+        except:
+            pass
         return r
     # endregion
 
