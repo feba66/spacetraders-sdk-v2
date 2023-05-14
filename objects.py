@@ -251,10 +251,12 @@ class ShipNavRouteWaypoint:
 @dataclass
 class ShipNavRoute:
     arrival:str
+    departureTime:str
     destination:ShipNavRouteWaypoint
     departure:ShipNavRouteWaypoint
     def __init__(self,data) -> None:
         self.arrival = data["arrival"]
+        self.departureTime=data["departureTime"]
         self.destination = ShipNavRouteWaypoint(data["destination"])
         self.departure = ShipNavRouteWaypoint(data["departure"])
 @dataclass

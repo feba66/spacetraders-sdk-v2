@@ -16,11 +16,12 @@ from enums import Factions
 from objects import Agent, Contract, Cooldown, Faction, JumpGate, Market, Meta, Ship, Shipyard, Survey, System, Waypoint
 
 class Queue_Obj_Type(Enum):
-    # WAYPOINT=1,
+    WAYPOINT=1,
     SYSTEM=2,
     MARKET=3,
-    # SHIPYARD=4,
+    SHIPYARD=4,
     SHIP=5,
+    CONSUMPTION=6
 @dataclass
 class Queue_Obj:
     type:Queue_Obj_Type
@@ -107,10 +108,16 @@ class SpaceTraders:
         # cur.execute("CREATE TABLE IF NOT EXISTS shipyards (symbol varchar, shiptype varchar, PRIMARY KEY (symbol, shiptype));")
         cur.execute("CREATE TABLE IF NOT EXISTS prices (waypointsymbol varchar, good varchar, supply varchar, purchase integer, sell integer,tradevolume integer, PRIMARY KEY (waypointsymbol, good));")
         cur.execute("CREATE TABLE IF NOT EXISTS transactions (WAYPOINTSYMBOL varchar, SHIPSYMBOL varchar, TRADESYMBOL varchar, TYPE varchar, UNITS integer, PRICEPERUNIT integer, TOTALPRICE integer, timestamp varchar, PRIMARY KEY (WAYPOINTSYMBOL,TRADESYMBOL,SHIPSYMBOL, timestamp));")
-        cur.execute("""CREATE TABLE IF NOT EXISTS ships (symbol character varying NOT NULL, waypointsymbol character varying, departure character varying, destination character varying, arrival character varying, status character varying, frame character varying, engine character varying, speed character varying, modules character varying[], mounts character varying[], role character varying, PRIMARY KEY (symbol));""")
-        cur.execute("""CREATE TABLE IF NOT EXISTS shipcargos (ship character varying, good character varying, units integer, PRIMARY KEY (ship, good) );""")
-        cur.execute("""CREATE TABLE IF NOT EXISTS shipfuel (ship character varying, fuel integer, capacity integer, PRIMARY KEY (ship));""")
+        
+        # region reworked tables 
+        cur.execute("""CREATE TABLE IF NOT EXISTS SHIPS (SYMBOL CHARACTER varying NOT NULL, faction CHARACTER varying, ROLE CHARACTER varying, FRAME CHARACTER varying,  ENGINE CHARACTER varying,  SPEED CHARACTER varying,  MODULES CHARACTER varying[],  MOUNTS CHARACTER varying[],  cargo_capacity integer, PRIMARY KEY (SYMBOL));""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS SHIPNAVS(SYMBOL CHARACTER varying NOT NULL, WAYPOINTSYMBOL CHARACTER varying, DEPARTURE CHARACTER varying, DESTINATION CHARACTER varying, ARRIVAL CHARACTER varying, DEPARTURETIME CHARACTER varying, STATUS CHARACTER varying, FLIGHTMODE CHARACTER varying, PRIMARY KEY (SYMBOL));""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS SHIPCARGOS (SYMBOL CHARACTER varying, GOOD CHARACTER varying, UNITS integer, PRIMARY KEY (SYMBOL, GOOD));""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS SHIPFUEL (SYMBOL CHARACTER varying, FUEL integer, CAPACITY integer, PRIMARY KEY (SYMBOL));""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS SHIPCONSUMTION (SYMBOL CHARACTER varying, AMOUNT integer, DEPARTEDFROM CHARACTER varying, DESTINATION CHARACTER varying, FLIGHTMODE CHARACTER varying, FLIGHTTIME integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (SYMBOL, TIMESTAMP));""")
         conn.commit()
+        # endregion
+
         while True:
             tmp:list[Queue_Obj] = []
             if len(self.db_queue)>0:
@@ -119,13 +126,13 @@ class SpaceTraders:
                         tmp.append(self.db_queue.pop(0))
                 while len(tmp)>0:
                     q_obj = tmp.pop(0)
-                    # if q_obj.type == Queue_Obj_Type.WAYPOINT:
-                    #     wp = q_obj.data
-                    #     cur.execute("""INSERT INTO waypoints (systemSymbol, symbol, type, x, y, orbitals, traits, chart,faction)
-                    #         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (symbol) DO UPDATE SET traits = %s, chart = %s,faction = %s WHERE waypoints.symbol = %s""",(
-                    #         wp.systemSymbol, wp.symbol,wp.type.name,wp.x,wp.y,[x.symbol for x in wp.orbitals],[x.symbol.name for x in wp.traits],wp.chart.submittedBy if wp.chart else "UNCHARTED",wp.faction.symbol if wp.faction else " ",[x.symbol.name for x in wp.traits],wp.chart.submittedBy if wp.chart else "UNCHARTED",wp.faction.symbol if wp.faction else " ",wp.symbol))
-                    #     conn.commit()
-                    if q_obj.type == Queue_Obj_Type.SYSTEM:
+                    if q_obj.type == Queue_Obj_Type.WAYPOINT:
+                        wp = q_obj.data
+                        cur.execute("""INSERT INTO waypoints (systemSymbol, symbol, type, x, y, orbitals, traits, chart,faction)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (symbol) DO UPDATE SET traits = %s, chart = %s,faction = %s WHERE waypoints.symbol = %s""",(
+                            wp.systemSymbol, wp.symbol,wp.type.name,wp.x,wp.y,[x.symbol for x in wp.orbitals],[x.symbol.name for x in wp.traits],wp.chart.submittedBy if wp.chart else "UNCHARTED",wp.faction.symbol if wp.faction else " ",[x.symbol.name for x in wp.traits],wp.chart.submittedBy if wp.chart else "UNCHARTED",wp.faction.symbol if wp.faction else " ",wp.symbol))
+                        conn.commit()
+                    elif q_obj.type == Queue_Obj_Type.SYSTEM:
                         systems:list[System] = q_obj.data
                         for i in range(ceil(len(systems)/1000)):
                             temp = []
@@ -163,49 +170,43 @@ class SpaceTraders:
                                 TRADEVOLUME = excluded.TRADEVOLUME""",
                                 list(temp))
                         conn.commit()
-                    # elif q_obj.type == Queue_Obj_Type.SHIPYARD:
-                    #     pass
+                    elif q_obj.type == Queue_Obj_Type.SHIPYARD:
+                        pass
                     elif q_obj.type == Queue_Obj_Type.SHIP:
-                        if isinstance(q_obj.data,list):
-                            ships:list[Ship] = q_obj.data
-                            temp = []
-                            for s in ships:
-                                temp.extend([s.symbol,s.nav.waypointSymbol,s.nav.route.departure.symbol,s.nav.route.destination.symbol,s.nav.route.arrival,s.nav.status.name,s.frame.symbol.name,s.engine.symbol.name,s.engine.speed,[x.symbol.name for x in s.modules],[x.symbol.name for x in s.mounts],s.registration.role])
-                            cur.execute(f"""INSERT INTO ships (symbol,waypointsymbol,departure,destination,arrival,status,frame,engine,speed,modules,mounts,role)
-                            VALUES {','.join([f'(%s, %s, %s, %s,%s, %s, %s, %s,%s, %s, %s, %s)' for _ in range(int(len(temp)/12))])} 
-                            ON CONFLICT (symbol) DO UPDATE SET
-                            waypointsymbol = excluded.waypointsymbol,departure = excluded.departure,destination = excluded.destination,arrival = excluded.arrival,status = excluded.status""",
-                                list(temp))
-                            temp = []
-                            for s in ships:
-                                temp.extend([s.symbol,s.fuel.current,s.fuel.capacity])
-                            cur.execute(f"""INSERT INTO shipfuel (ship , fuel , capacity)
-                            VALUES {','.join([f'(%s,%s,%s)' for _ in range(int(len(temp)/3))])}
-                            ON CONFLICT (ship) DO UPDATE SET fuel=excluded.fuel""",
-                                list(temp))
-                            temp = []
-                            for s in ships:
-                                for c in s.cargo.inventory:
-                                    temp.extend([s.symbol,c.symbol,c.units])
-                            cur.execute(f"""INSERT INTO SHIPCARGOS (SHIP, GOOD, UNITS)
-                            VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])}
-                            ON CONFLICT (SHIP,GOOD) DO UPDATE SET UNITS = excluded.UNITS""",
-                                list(temp))
-                        else:
-                            s:Ship = q_obj.data
-                            cur.execute("""INSERT INTO ships (symbol,waypointsymbol,departure,destination,arrival,status,frame,engine,speed,modules,mounts,role)
-                            VALUES (%s, %s, %s, %s, %s,%s,%s, %s, %s, %s, %s,%s) ON CONFLICT (symbol) DO UPDATE SET
-                            waypointsymbol = %s,departure = %s,destination = %s,arrival = %s,status = %s""",(s.symbol,s.nav.waypointSymbol,s.nav.route.departure.symbol,s.nav.route.destination.symbol,s.nav.route.arrival,s.nav.status.name,s.frame.symbol.name,s.engine.symbol.name,s.engine.speed,[x.symbol.name for x in s.modules],[x.symbol.name for x in s.mounts],s.registration.role,s.nav.waypointSymbol,s.nav.route.departure.symbol,s.nav.route.destination.symbol,s.nav.route.arrival,s.nav.status.name))
-                            if s.fuel.capacity != 0:
-                                cur.execute("""INSERT INTO shipfuel (ship , fuel , capacity) values (%s,%s,%s) ON CONFLICT (ship) DO UPDATE SET fuel=%s""",(s.symbol,s.fuel.current,s.fuel.capacity,s.fuel.current))
-                            temp = []
+                        ships:list[Ship] = q_obj.data
+                        temp = []
+                        for s in ships:
+                            temp.extend([s.symbol,s.registration.factionSymbol,s.registration.role,s.frame.symbol.name,s.engine.symbol.name,s.engine.speed,[x.symbol.name for x in s.modules],[x.symbol.name for x in s.mounts],s.cargo.capacity])
+                        cur.execute(f"""INSERT INTO SHIPS (SYMBOL, FACTION, ROLE, FRAME, ENGINE, SPEED, MODULES, MOUNTS, CARGO_CAPACITY)
+                        VALUES {','.join([f'(%s, %s, %s, %s,%s, %s, %s, %s,%s)' for _ in range(int(len(temp)/9))])} 
+                        ON CONFLICT (SYMBOL) DO NOTHING""",
+                            list(temp))
+                        temp = []
+                        for s in ships:
+                            temp.extend([s.symbol,s.fuel.current,s.fuel.capacity])
+                        cur.execute(f"""INSERT INTO SHIPFUEL (SYMBOL, FUEL, CAPACITY)
+                        VALUES {','.join([f'(%s,%s,%s)' for _ in range(int(len(temp)/3))])}
+                        ON CONFLICT (SYMBOL) DO UPDATE SET FUEL=excluded.FUEL""",
+                            list(temp))
+                        temp = []
+                        for s in ships:
                             for c in s.cargo.inventory:
                                 temp.extend([s.symbol,c.symbol,c.units])
-                            cur.execute(f"""INSERT INTO SHIPCARGOS (SHIP, GOOD, UNITS)
-                            VALUES {','.join([f'(%s, %s, %s)' for _ in range(len(s.cargo.inventory))])} 
-                            ON CONFLICT (SHIP,GOOD) DO UPDATE SET UNITS = excluded.UNITS""",
+                        cur.execute(f"""INSERT INTO SHIPCARGOS (SYMBOL, GOOD, UNITS)
+                            VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])}
+                            ON CONFLICT (SYMBOL, GOOD) DO UPDATE SET UNITS = excluded.UNITS""",
                                 list(temp))
+                        temp = []
+                        for s in ships:
+                            temp.extend([s.symbol,s.nav.waypointSymbol,s.nav.route.departure.symbol,s.nav.route.destination.symbol,s.nav.route.arrival,s.nav.route.departureTime,s.nav.status.name,s.nav.flightMode.name])
+                        cur.execute(f"""INSERT INTO SHIPNAVS (SYMBOL, WAYPOINTSYMBOL, DEPARTURE, DESTINATION, ARRIVAL, DEPARTURETIME, STATUS, FLIGHTMODE)
+                            VALUES {','.join([f'(%s, %s, %s,%s, %s, %s,%s, %s)' for _ in range(int(len(temp)/8))])}
+                            ON CONFLICT (SYMBOL) DO UPDATE SET WAYPOINTSYMBOL = excluded.WAYPOINTSYMBOL, DEPARTURE = excluded.DEPARTURE, DESTINATION = excluded.DESTINATION,ARRIVAL = excluded.ARRIVAL,DEPARTURETIME = excluded.DEPARTURETIME,STATUS = excluded.STATUS,FLIGHTMODE = excluded.FLIGHTMODE""",
+                                list(temp))
+                        
                         conn.commit()
+                    elif q_obj.type == Queue_Obj_Type.CONSUMPTION:
+                        pass
                 # TODO add the msg to db
                 # TODO add the queue-ing to all functions
             else:
@@ -357,7 +358,7 @@ if __name__ == "__main__":
     # st.Get_Market("X1-DF55-17335A")
     # pprint(st.Register("feba66","ASTRO"))
     # pprint(st.Get_Agent())
-    # pprint(st.Get_Ships())
+    pprint(st.Get_Ships())
     st.Init_Systems()
     print("done")
     time.sleep(2)
