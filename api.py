@@ -109,7 +109,7 @@ class SpaceTraders:
         cur.execute("CREATE TABLE IF NOT EXISTS waypoints (systemSymbol varchar, symbol varchar PRIMARY KEY, type varchar, x integer,y integer,orbitals varchar[],traits varchar[],chart varchar,faction varchar);")
         cur.execute("CREATE TABLE IF NOT EXISTS systems (symbol varchar PRIMARY KEY, type varchar, x integer, y integer);")
         cur.execute("CREATE TABLE IF NOT EXISTS markets (symbol varchar, good varchar, type varchar, PRIMARY KEY (symbol, good, type));")
-        # cur.execute("CREATE TABLE IF NOT EXISTS shipyards (symbol varchar, shiptype varchar, PRIMARY KEY (symbol, shiptype));")
+        cur.execute("CREATE TABLE IF NOT EXISTS shipyards (symbol varchar, shiptype varchar, PRIMARY KEY (symbol, shiptype));")
         cur.execute("CREATE TABLE IF NOT EXISTS prices (waypointsymbol varchar, symbol varchar, supply varchar, purchase integer, sell integer,tradevolume integer,timestamp varchar, PRIMARY KEY (waypointsymbol, symbol,timestamp));")
         cur.execute("CREATE TABLE IF NOT EXISTS transactions (WAYPOINTSYMBOL varchar, SHIPSYMBOL varchar, TRADESYMBOL varchar, TYPE varchar, UNITS integer, PRICEPERUNIT integer, TOTALPRICE integer, timestamp varchar, PRIMARY KEY (WAYPOINTSYMBOL,TRADESYMBOL,SHIPSYMBOL, timestamp));")
         
@@ -182,7 +182,17 @@ class SpaceTraders:
                                 list(temp))
                         conn.commit()
                     elif q_obj.type == Queue_Obj_Type.SHIPYARD:
-                        pass
+                        yard:list[Shipyard] = q_obj.data
+                        temp = []
+                        for sy in [yard]:
+                            for shiptype in sy.shipTypes:
+                                temp.extend([sy.symbol,shiptype.name])
+                            # temp.extend([wp.systemSymbol, wp.symbol,wp.type.name,wp.x,wp.y,[x.symbol for x in wp.orbitals],[x.symbol.name for x in wp.traits],wp.chart.submittedBy if wp.chart else "UNCHARTED",wp.faction.symbol if wp.faction else " "])
+                        cur.execute(f"""INSERT INTO shipyards (symbol,shiptype)
+                            VALUES  {','.join([f'(%s, %s)' for _ in range(int(len(temp)/2))])}
+                            ON CONFLICT (symbol,shiptype) 
+                            DO NOTHING""",temp)
+                        conn.commit()
                     elif q_obj.type == Queue_Obj_Type.SHIP:
                         ships:list[Ship] = q_obj.data
                         temp = []
@@ -436,6 +446,9 @@ class SpaceTraders:
             return  # TODO raise error
         yard = Shipyard(data)
         self.shipyards[waypointSymbol] = yard
+        
+        with self.db_lock:
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPYARD,yard))
         return yard
     def Purchase_Ship(self, shipType, waypointSymbol):
         path = "/my/ships"
@@ -494,7 +507,8 @@ if __name__ == "__main__":
     ship = list(st.ships.values())[0]
     # pprint(st.Get_Waypoints(ship.nav.systemSymbol))
     # pprint(st.Navigate(ship.symbol,"X1-AC10-39507F"))
-    pprint(st.Get_Market("X1-AC10-39507F"))
+    # pprint(st.Get_Market("X1-AC10-39507F"))
+    pprint(st.Get_Shipyard("X1-AC10-39507F"))
     # st.Init_Systems()
     print("done")
     time.sleep(2)
