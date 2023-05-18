@@ -423,11 +423,20 @@ class SpaceTraders:
             w = Waypoint(d)
             self.waypoints[w.symbol] = w
             way.append(w.symbol)
-        q_tmp = []
-        q_tmp.append(Queue_Obj(Queue_Obj_Type.WAYPOINT,[self.waypoints[w] for w in way]))
         with self.db_lock:
-            self.db_queue.extend(q_tmp)
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.WAYPOINT,[self.waypoints[w] for w in way]))
         return (way, meta)
+    def Get_Shipyard(self, waypointSymbol):
+        systemSymbol = waypointSymbol[0:waypointSymbol.find("-", 4)]
+        path = f"/systems/{systemSymbol}/waypoints/{waypointSymbol}/shipyard"
+        r = self.my_req(path, "get")
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        yard = Shipyard(data)
+        self.shipyards[waypointSymbol] = yard
+        return yard
     def Purchase_Ship(self, shipType, waypointSymbol):
         path = "/my/ships"
         r = self.my_req(path, "post", data={"shipType": shipType, "waypointSymbol": waypointSymbol})
