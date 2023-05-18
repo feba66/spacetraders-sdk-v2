@@ -55,7 +55,7 @@ Class          | HTTP request  | Description   | Implemented
 | *Systems*    | **get** /systems | List Systems | 
 | *Systems*    | **get** /systems.json | Get all systems. |  statekeeping & db
 | *Systems*    | **get** /systems/{systemSymbol} | Get System | 
-| *Systems*    | **get** /systems/{systemSymbol}/waypoints | List Waypoints | 
+| *Systems*    | **get** /systems/{systemSymbol}/waypoints | List Waypoints | statekeeping & db
 | *Systems*    | **get** /systems/{systemSymbol}/waypoints/{waypointSymbol} | Get Waypoint | 
 | *Systems*    | **get** /systems/{systemSymbol}/waypoints/{waypointSymbol}/market | Get Market | statekeeping & db
 | *Systems*    | **get** /systems/{systemSymbol}/waypoints/{waypointSymbol}/shipyard | Get Shipyard | 
