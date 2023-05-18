@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from dataclasses import dataclass
 from enum import Enum
 from enums import Factions
-from objects import Agent, Contract, Cooldown, Faction, JumpGate, Market, Meta, Ship, Shipyard, Survey, System, Waypoint
+from objects import Agent, Contract, Cooldown, Faction, JumpGate, Market, Meta, Ship, ShipNav, Shipyard, Survey, System, Waypoint
 
 class Queue_Obj_Type(Enum):
     WAYPOINT=1,
@@ -22,6 +22,7 @@ class Queue_Obj_Type(Enum):
     MARKET=3,
     SHIPYARD=4,
     SHIP=5,
+    SHIPNAV=8,
     CONSUMPTION=6,
     LEADERBOARD=7
 @dataclass
@@ -165,14 +166,14 @@ class SpaceTraders:
                         if m.tradeGoods:
                             temp = []
                             for x in m.tradeGoods:
-                                temp.extend([m.symbol,x.symbol,x.supply.name,x.purchasePrice,x.sellPrice,x.tradeVolume])
-                            cur.execute(f"""INSERT INTO PRICES (WAYPOINTSYMBOL,GOOD,SUPPLY,PURCHASE,SELL,TRADEVOLUME)
-                            VALUES {','.join([f'(%s, %s, %s, %s, %s, %s)' for _ in range(len(m.tradeGoods))])} 
-                            ON CONFLICT (WAYPOINTSYMBOL, GOOD) DO UPDATE 
-                            SET SUPPLY = excluded.SUPPLY,
-                                PURCHASE = excluded.PURCHASE,
-                                SELL = excluded.SELL,
-                                TRADEVOLUME = excluded.TRADEVOLUME""",
+                                temp.extend([m.symbol,x.symbol,x.supply.name,x.purchasePrice,x.sellPrice,x.tradeVolume,datetime.strftime(datetime.utcnow(),self.FORMAT_STR)])
+                                cur.execute(f"""INSERT INTO PRICES (WAYPOINTSYMBOL,symbol,SUPPLY,PURCHASE,SELL,TRADEVOLUME,TIMESTAMP)
+                                VALUES {','.join([f'(%s, %s, %s, %s, %s, %s, %s)' for _ in range(int(len(temp)/7))])} 
+                                ON CONFLICT (WAYPOINTSYMBOL, symbol, TIMESTAMP) DO UPDATE 
+                                SET SUPPLY = excluded.SUPPLY,
+                                    PURCHASE = excluded.PURCHASE,
+                                    SELL = excluded.SELL,
+                                    TRADEVOLUME = excluded.TRADEVOLUME""",
                                 list(temp))
                         conn.commit()
                     elif q_obj.type == Queue_Obj_Type.SHIPYARD:
@@ -203,6 +204,17 @@ class SpaceTraders:
                                 list(temp))
                         temp = []
                         for s in ships:
+                            temp.extend([s.symbol,s.nav.waypointSymbol,s.nav.route.departure.symbol,s.nav.route.destination.symbol,s.nav.route.arrival,s.nav.route.departureTime,s.nav.status.name,s.nav.flightMode.name])
+                        cur.execute(f"""INSERT INTO SHIPNAVS (SYMBOL, WAYPOINTSYMBOL, DEPARTURE, DESTINATION, ARRIVAL, DEPARTURETIME, STATUS, FLIGHTMODE)
+                            VALUES {','.join([f'(%s, %s, %s,%s, %s, %s,%s, %s)' for _ in range(int(len(temp)/8))])}
+                            ON CONFLICT (SYMBOL) DO UPDATE SET WAYPOINTSYMBOL = excluded.WAYPOINTSYMBOL, DEPARTURE = excluded.DEPARTURE, DESTINATION = excluded.DESTINATION,ARRIVAL = excluded.ARRIVAL,DEPARTURETIME = excluded.DEPARTURETIME,STATUS = excluded.STATUS,FLIGHTMODE = excluded.FLIGHTMODE""",
+                                list(temp))
+                        
+                        conn.commit()
+                    elif q_obj.type == Queue_Obj_Type.SHIPNAV:
+                        ship:Ship = q_obj.data
+                        temp = []
+                        for s in [ships]:
                             temp.extend([s.symbol,s.nav.waypointSymbol,s.nav.route.departure.symbol,s.nav.route.destination.symbol,s.nav.route.arrival,s.nav.route.departureTime,s.nav.status.name,s.nav.flightMode.name])
                         cur.execute(f"""INSERT INTO SHIPNAVS (SYMBOL, WAYPOINTSYMBOL, DEPARTURE, DESTINATION, ARRIVAL, DEPARTURETIME, STATUS, FLIGHTMODE)
                             VALUES {','.join([f'(%s, %s, %s,%s, %s, %s,%s, %s)' for _ in range(int(len(temp)/8))])}
@@ -258,6 +270,14 @@ class SpaceTraders:
     def Login(self, token):
         self.session.headers.update({"Authorization": "Bearer "+token})
 
+    # region helpers
+    def parse_time(self,tstr):
+        return datetime.strptime(tstr,self.FORMAT_STR)
+    def get_time_diff(self,big,small):
+        return (big-small).total_seconds()
+    def time_till(self,future):
+        return self.get_time_diff(self.parse_time(future), datetime.utcnow())
+    # endregion
 
     # region added
     # endregion
@@ -331,6 +351,30 @@ class SpaceTraders:
         with self.db_lock:
             self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP,self.ships[shipSymbol]))
         return self.ships[shipSymbol]
+    def Orbit(self, shipSymbol):
+        path = f"/my/ships/{shipSymbol}/orbit"
+        r = self.my_req(path, "post")
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        shipnav = ShipNav(data["nav"])
+        self.ships[shipSymbol].nav = shipnav
+        with self.db_lock:
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
+        return self.ships[shipSymbol].nav
+    def Dock(self, shipSymbol):
+        path = f"/my/ships/{shipSymbol}/dock"
+        r = self.my_req(path, "post")
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        shipnav = ShipNav(data["nav"])
+        self.ships[shipSymbol].nav = shipnav
+        with self.db_lock:
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
+        return self.ships[shipSymbol].nav
     def Purchase_Ship(self, shipType, waypointSymbol):
         path = "/my/ships"
         r = self.my_req(path, "post", data={"shipType": shipType, "waypointSymbol": waypointSymbol})
@@ -380,20 +424,12 @@ class SpaceTraders:
 if __name__ == "__main__":
     
     st = SpaceTraders()
-    old_j=json.loads(st.Status().text)
-    time.sleep(5)
-    while True:
-        j = json.loads(st.Status().text)
-        if j!=old_j:
-            pprint(j)
-            old_j=j
-            time.sleep(30*60-30)
-        time.sleep(15)
     st.Login(os.getenv("TOKEN"))
     # st.Get_Market("X1-DF55-17335A")
     # pprint(st.Register("feba66","ASTRO"))
     # pprint(st.Get_Agent())
-    # pprint(st.Get_Ships())
+    pprint(st.Get_Ships())
+    ship = list(st.ships.keys())[0]
     # st.Init_Systems()
     print("done")
-    time.sleep(2)
+    # time.sleep(2)

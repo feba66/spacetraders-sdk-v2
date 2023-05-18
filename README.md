@@ -32,11 +32,11 @@ Class          | HTTP request  | Description   | Implemented
 | *Fleet*      | **post** /my/ships | Purchase a ship | statekeeping & half db
 | *Fleet*      | **get** /my/ships/{shipSymbol} | Retrieve the details of your ship. |  statekeeping & db
 | *Fleet*      | **get** /my/ships/{shipSymbol}/cargo | Retrieve the cargo of your ship. |  
-| *Fleet*      | **post** /my/ships/{shipSymbol}/orbit | Orbit Ship | 
+| *Fleet*      | **post** /my/ships/{shipSymbol}/orbit | Orbit Ship | statekeeping & db
 | *Fleet*      | **post** /my/ships/{shipSymbol}/refine | Ship Refine | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/chart | Create Chart | 
 | *Fleet*      | **get** /my/ships/{shipSymbol}/cooldown | Get Ship Cooldown | 
-| *Fleet*      | **post** /my/ships/{shipSymbol}/dock | Dock Ship | 
+| *Fleet*      | **post** /my/ships/{shipSymbol}/dock | Dock Ship | statekeeping & db
 | *Fleet*      | **post** /my/ships/{shipSymbol}/survey | Create Survey | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/extract | Extract Resources | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/jettison | Jettison Cargo | 
