@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from dataclasses import dataclass
 from enum import Enum
 from enums import Factions
-from objects import Agent, Contract, Cooldown, Faction, JumpGate, Market, Meta, Ship, ShipNav, Shipyard, Survey, System, Waypoint
+from objects import Agent, Contract, Cooldown, Faction, JumpGate, Market, Meta, Ship, ShipFuel, ShipNav, Shipyard, Survey, System, Waypoint
 
 class Queue_Obj_Type(Enum):
     WAYPOINT=1,
@@ -23,6 +23,7 @@ class Queue_Obj_Type(Enum):
     SHIPYARD=4,
     SHIP=5,
     SHIPNAV=8,
+    SHIPFUEL=9,
     CONSUMPTION=6,
     LEADERBOARD=7
 @dataclass
@@ -222,6 +223,16 @@ class SpaceTraders:
                                 list(temp))
                         
                         conn.commit()
+                    elif q_obj.type == Queue_Obj_Type.SHIPFUEL:
+                        ship:Ship = q_obj.data
+                        temp = []
+                        for s in [ships]:
+                            temp.extend([s.symbol,s.fuel.current,s.fuel.capacity])
+                        cur.execute(f"""INSERT INTO SHIPFUEL (SYMBOL, FUEL, CAPACITY)
+                        VALUES {','.join([f'(%s,%s,%s)' for _ in range(int(len(temp)/3))])}
+                        ON CONFLICT (SYMBOL) DO UPDATE SET FUEL=excluded.FUEL""",
+                            list(temp))
+                        conn.commit()
                     elif q_obj.type == Queue_Obj_Type.CONSUMPTION:
                         pass
                     elif q_obj.type == Queue_Obj_Type.LEADERBOARD:
@@ -359,9 +370,10 @@ class SpaceTraders:
         if data == None:
             return  # TODO raise error
         shipnav = ShipNav(data["nav"])
-        self.ships[shipSymbol].nav = shipnav
-        with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
+        if shipSymbol in self.ships:
+            self.ships[shipSymbol].nav = shipnav
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
         return self.ships[shipSymbol].nav
     def Dock(self, shipSymbol):
         path = f"/my/ships/{shipSymbol}/dock"
@@ -371,10 +383,27 @@ class SpaceTraders:
         if data == None:
             return  # TODO raise error
         shipnav = ShipNav(data["nav"])
-        self.ships[shipSymbol].nav = shipnav
-        with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
+        if shipSymbol in self.ships:
+            self.ships[shipSymbol].nav = shipnav
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
         return self.ships[shipSymbol].nav
+    def Navigate(self, shipSymbol, waypointSymbol):
+        path = f"/my/ships/{shipSymbol}/navigate"
+        r = self.my_req(path, "post", data={"waypointSymbol": waypointSymbol})
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        shipnav = ShipNav(data["nav"])
+        shipfuel = ShipFuel(data["fuel"])
+        if shipSymbol in self.ships:
+            self.ships[shipSymbol].nav = shipnav
+            self.ships[shipSymbol].fuel = shipfuel
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol]))
+        return (shipnav, shipfuel)
     def Purchase_Ship(self, shipType, waypointSymbol):
         path = "/my/ships"
         r = self.my_req(path, "post", data={"shipType": shipType, "waypointSymbol": waypointSymbol})
