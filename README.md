@@ -54,7 +54,7 @@ Class          | HTTP request  | Description   | Implemented
 | *Fleet*      | **post** /my/ships/{shipSymbol}/transfer | Transfer Cargo | 
 | *Systems*    | **get** /systems | List Systems | 
 | *Systems*    | **get** /systems.json | Get all systems. |  statekeeping & db
-| *Systems*    | **get** /systems/{systemSymbol} | Get System | 
+| *Systems*    | **get** /systems/{systemSymbol} | Get System | statekeeping & db
 | *Systems*    | **get** /systems/{systemSymbol}/waypoints | List Waypoints | statekeeping & db
 | *Systems*    | **get** /systems/{systemSymbol}/waypoints/{waypointSymbol} | Get Waypoint | 
 | *Systems*    | **get** /systems/{systemSymbol}/waypoints/{waypointSymbol}/market | Get Market | statekeeping & db

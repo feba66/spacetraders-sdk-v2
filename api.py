@@ -302,6 +302,10 @@ class SpaceTraders:
         return (big-small).total_seconds()
     def time_till(self,future):
         return self.get_time_diff(self.parse_time(future), datetime.utcnow())
+    def sleep_till(self,nav:ShipNav):
+        t = max(0,self.time_till(nav.route.arrival))
+        self.logger.info(f"Sleep for {t}")
+        time.sleep(t)
     # endregion
 
     # region added
@@ -494,6 +498,18 @@ class SpaceTraders:
             system = System(s)
             self.systems[system.symbol] = system
         return self.systems
+    def Get_System(self, systemSymbol):
+        path = f"/systems/{systemSymbol}"
+        r = self.my_req(path, "get")
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        system = System(data)
+        self.systems[systemSymbol] = system
+        with self.db_lock:
+                self.db_queue.extend(Queue_Obj(Queue_Obj_Type.SYSTEM,[system]))
+        return system
     def Get_Market(self, waypointSymbol):
         systemSymbol = waypointSymbol[0:waypointSymbol.find("-", 4)]
         path = f"/systems/{systemSymbol}/waypoints/{waypointSymbol}/market"
