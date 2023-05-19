@@ -52,7 +52,7 @@ Class          | HTTP request  | Description   | Implemented
 | *Fleet*      | **post** /my/ships/{shipSymbol}/refuel | Refuel Ship | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/purchase | Purchase Cargo | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/transfer | Transfer Cargo | 
-| *Systems*    | **get** /systems | List Systems | 
+| *Systems*    | **get** /systems | List Systems | statekeeping & db
 | *Systems*    | **get** /systems.json | Get all systems. |  statekeeping & db
 | *Systems*    | **get** /systems/{systemSymbol} | Get System | statekeeping & db
 | *Systems*    | **get** /systems/{systemSymbol}/waypoints | List Waypoints | statekeeping & db

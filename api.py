@@ -488,7 +488,7 @@ class SpaceTraders:
                 f.write(r.text)
             j = r.json()
             with self.db_lock:
-                self.db_queue.extend(Queue_Obj(Queue_Obj_Type.SYSTEM,[System(system) for system in j]))
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM,[System(system) for system in j]))
         else:
             with open("systems.json", "r") as f:
                 j = json.load(f)
@@ -508,8 +508,23 @@ class SpaceTraders:
         system = System(data)
         self.systems[systemSymbol] = system
         with self.db_lock:
-                self.db_queue.extend(Queue_Obj(Queue_Obj_Type.SYSTEM,[system]))
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM,[system]))
         return system
+    def Get_Systems(self, page=1, limit=20):
+        path = f"/systems"
+        r = self.my_req(path+f"?page={page}&limit={limit}", "get")
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        systems = []
+        for d in data:
+            system = System(d)
+            systems.append(system)
+            self.systems[system.symbol] = system
+        with self.db_lock:
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM,systems))
+        return systems,Meta(j["meta"])
     def Get_Market(self, waypointSymbol):
         systemSymbol = waypointSymbol[0:waypointSymbol.find("-", 4)]
         path = f"/systems/{systemSymbol}/waypoints/{waypointSymbol}/market"
@@ -532,6 +547,7 @@ if __name__ == "__main__":
     # pprint(st.Register("test_9871","CULT"))
     # exit()
     st.Login(os.getenv("TOKEN"))
+    st.Get_Systems(limit=3)
     # st.Get_Market("X1-JP81-52264Z")
     # exit()
     st.Init_Systems()
