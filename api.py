@@ -335,6 +335,7 @@ class SpaceTraders:
         if login:
             self.Login(token)
         return token
+    # region Agents
     def Get_Agent(self):
         path = "/my/agent"
         r = self.my_req(path, "get")
@@ -344,6 +345,9 @@ class SpaceTraders:
             return  # TODO raise error
         self.agent = Agent(data)
         return self.agent
+    # endregion
+
+    # region Systems
     def Get_JumpGate(self, waypointSymbol):
         systemSymbol = waypointSymbol[0:waypointSymbol.find("-", 4)]
         path = f"/systems/{systemSymbol}/waypoints/{waypointSymbol}/jump-gate"
@@ -356,8 +360,9 @@ class SpaceTraders:
         self.jumpgates[waypointSymbol] = gate
         return gate
     # endregion
+    # endregion
 
-    # region done
+    # region statekeeping & db
     def Status(self):
         path ="/"
         r = self.my_req(path, "get")
@@ -367,72 +372,54 @@ class SpaceTraders:
         except:
             pass
         return r
-    def Get_Ships(self, page=1, limit=20):
-        path = "/my/ships"
+    
+    #region Systems
+    def Get_Systems(self, page=1, limit=20):
+        path = f"/systems"
         r = self.my_req(path+f"?page={page}&limit={limit}", "get")
         j = r.json()
         data = j["data"] if "data" in j else None
         if data == None:
             return  # TODO raise error
+        systems = []
         for d in data:
-            ship = Ship(d)
-            self.ships[ship.symbol] = ship
+            system = System(d)
+            systems.append(system)
+            self.systems[system.symbol] = system
         with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP,[Ship(ship) for ship in data]))
-        return self.ships,Meta(j["meta"])
-    def Get_Ship(self, shipSymbol):
-        path = f"/my/ships/{shipSymbol}"
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM,systems))
+        return systems,Meta(j["meta"])
+    def Init_Systems(self):
+        path = "/systems.json"
+
+        if not os.path.exists("systems.json"):  # TODO smarter caching
+            r = self.my_req(path, "get")
+            with open("systems.json", "w") as f:
+                f.write(r.text)
+            j = r.json()
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM,[System(system) for system in j]))
+        else:
+            with open("systems.json", "r") as f:
+                j = json.load(f)
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM,[System(system) for system in j]))
+        for s in j:
+            system = System(s)
+            self.systems[system.symbol] = system
+        return self.systems
+    def Get_System(self, systemSymbol):
+        path = f"/systems/{systemSymbol}"
         r = self.my_req(path, "get")
         j = r.json()
         data = j["data"] if "data" in j else None
         if data == None:
             return  # TODO raise error
-        self.ships[shipSymbol] = Ship(data)
+        system = System(data)
+        self.systems[systemSymbol] = system
         with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP,self.ships[shipSymbol]))
-        return self.ships[shipSymbol]
-    def Orbit(self, shipSymbol):
-        path = f"/my/ships/{shipSymbol}/orbit"
-        r = self.my_req(path, "post")
-        j = r.json()
-        data = j["data"] if "data" in j else None
-        if data == None:
-            return  # TODO raise error
-        shipnav = ShipNav(data["nav"])
-        if shipSymbol in self.ships:
-            self.ships[shipSymbol].nav = shipnav
-            with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
-        return self.ships[shipSymbol].nav
-    def Dock(self, shipSymbol):
-        path = f"/my/ships/{shipSymbol}/dock"
-        r = self.my_req(path, "post")
-        j = r.json()
-        data = j["data"] if "data" in j else None
-        if data == None:
-            return  # TODO raise error
-        shipnav = ShipNav(data["nav"])
-        if shipSymbol in self.ships:
-            self.ships[shipSymbol].nav = shipnav
-            with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
-        return self.ships[shipSymbol].nav
-    def Navigate(self, shipSymbol, waypointSymbol):
-        path = f"/my/ships/{shipSymbol}/navigate"
-        r = self.my_req(path, "post", data={"waypointSymbol": waypointSymbol})
-        j = r.json()
-        data = j["data"] if "data" in j else None
-        if data == None:
-            return  # TODO raise error
-        shipnav = ShipNav(data["nav"])
-        shipfuel = ShipFuel(data["fuel"])
-        if shipSymbol in self.ships:
-            self.ships[shipSymbol].nav = shipnav
-            self.ships[shipSymbol].fuel = shipfuel
-            with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol]))
-        return (shipnav, shipfuel)
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM,[system]))
+        return system
     def Get_Waypoints(self, systemSymbol, page=1, limit=20):
         path = f"/systems/{systemSymbol}/waypoints"
         r = self.my_req(path+f"?page={page}&limit={limit}", "get")
@@ -465,6 +452,19 @@ class SpaceTraders:
         with self.db_lock:
             self.db_queue.append(Queue_Obj(Queue_Obj_Type.WAYPOINT,[w]))
         return w
+    def Get_Market(self, waypointSymbol):
+        systemSymbol = waypointSymbol[0:waypointSymbol.find("-", 4)]
+        path = f"/systems/{systemSymbol}/waypoints/{waypointSymbol}/market"
+        r = self.my_req(path, "get")
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        market = Market(data)
+        self.markets[waypointSymbol] = market
+        with self.db_lock:
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.MARKET,market))
+        return data
     def Get_Shipyard(self, waypointSymbol):
         systemSymbol = waypointSymbol[0:waypointSymbol.find("-", 4)]
         path = f"/systems/{systemSymbol}/waypoints/{waypointSymbol}/shipyard"
@@ -479,6 +479,22 @@ class SpaceTraders:
         with self.db_lock:
             self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPYARD,yard))
         return yard
+    #endregion
+
+    # region Fleet
+    def Get_Ships(self, page=1, limit=20):
+        path = "/my/ships"
+        r = self.my_req(path+f"?page={page}&limit={limit}", "get")
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        for d in data:
+            ship = Ship(d)
+            self.ships[ship.symbol] = ship
+        with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP,[Ship(ship) for ship in data]))
+        return self.ships,Meta(j["meta"])
     def Purchase_Ship(self, shipType, waypointSymbol):
         path = "/my/ships"
         r = self.my_req(path, "post", data={"shipType": shipType, "waypointSymbol": waypointSymbol})
@@ -492,65 +508,78 @@ class SpaceTraders:
             self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP,ship))
         self.ships[ship.symbol] = ship
         return ship
-    def Init_Systems(self):
-        path = "/systems.json"
+    def Get_Ship(self, shipSymbol):
+        path = f"/my/ships/{shipSymbol}"
+        r = self.my_req(path, "get")
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        self.ships[shipSymbol] = Ship(data)
+        with self.db_lock:
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP,self.ships[shipSymbol]))
+        return self.ships[shipSymbol]
+    # cargo
+    def Orbit(self, shipSymbol):
+        path = f"/my/ships/{shipSymbol}/orbit"
+        r = self.my_req(path, "post")
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        shipnav = ShipNav(data["nav"])
+        if shipSymbol in self.ships:
+            self.ships[shipSymbol].nav = shipnav
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
+        return self.ships[shipSymbol].nav
+    # refine
+    # chart
+    # cooldown
+    def Dock(self, shipSymbol):
+        path = f"/my/ships/{shipSymbol}/dock"
+        r = self.my_req(path, "post")
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        shipnav = ShipNav(data["nav"])
+        if shipSymbol in self.ships:
+            self.ships[shipSymbol].nav = shipnav
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
+        return self.ships[shipSymbol].nav
+    # survey
+    # extract
+    # jettison
+    # jump
+    def Navigate(self, shipSymbol, waypointSymbol):
+        path = f"/my/ships/{shipSymbol}/navigate"
+        r = self.my_req(path, "post", data={"waypointSymbol": waypointSymbol})
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        shipnav = ShipNav(data["nav"])
+        shipfuel = ShipFuel(data["fuel"])
+        if shipSymbol in self.ships:
+            self.ships[shipSymbol].nav = shipnav
+            self.ships[shipSymbol].fuel = shipfuel
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol]))
+        return (shipnav, shipfuel)
+    # warp
+    # sell
+    # scan systems
+    # scan waypoints
+    # scan ships
+    # refuel
+    # purchase
+    # transfer
+    # endregion
 
-        if not os.path.exists("systems.json"):  # TODO smarter caching
-            r = self.my_req(path, "get")
-            with open("systems.json", "w") as f:
-                f.write(r.text)
-            j = r.json()
-            with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM,[System(system) for system in j]))
-        else:
-            with open("systems.json", "r") as f:
-                j = json.load(f)
-            with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM,[System(system) for system in j]))
-        for s in j:
-            system = System(s)
-            self.systems[system.symbol] = system
-        return self.systems
-    def Get_System(self, systemSymbol):
-        path = f"/systems/{systemSymbol}"
-        r = self.my_req(path, "get")
-        j = r.json()
-        data = j["data"] if "data" in j else None
-        if data == None:
-            return  # TODO raise error
-        system = System(data)
-        self.systems[systemSymbol] = system
-        with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM,[system]))
-        return system
-    def Get_Systems(self, page=1, limit=20):
-        path = f"/systems"
-        r = self.my_req(path+f"?page={page}&limit={limit}", "get")
-        j = r.json()
-        data = j["data"] if "data" in j else None
-        if data == None:
-            return  # TODO raise error
-        systems = []
-        for d in data:
-            system = System(d)
-            systems.append(system)
-            self.systems[system.symbol] = system
-        with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM,systems))
-        return systems,Meta(j["meta"])
-    def Get_Market(self, waypointSymbol):
-        systemSymbol = waypointSymbol[0:waypointSymbol.find("-", 4)]
-        path = f"/systems/{systemSymbol}/waypoints/{waypointSymbol}/market"
-        r = self.my_req(path, "get")
-        j = r.json()
-        data = j["data"] if "data" in j else None
-        if data == None:
-            return  # TODO raise error
-        market = Market(data)
-        self.markets[waypointSymbol] = market
-        with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.MARKET,market))
-        return data
+    
     # endregion
 if __name__ == "__main__":
     
