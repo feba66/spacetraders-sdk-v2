@@ -452,6 +452,19 @@ class SpaceTraders:
             with self.db_lock:
                 self.db_queue.append(Queue_Obj(Queue_Obj_Type.WAYPOINT,[self.waypoints[w] for w in way]))
         return (way, meta)
+    def Get_Waypoint(self, waypointSymbol):
+        systemSymbol = waypointSymbol[0:waypointSymbol.find("-", 4)]
+        path = f"/systems/{systemSymbol}/waypoints/{waypointSymbol}"
+        r = self.my_req(path, "get")
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        w = Waypoint(data)
+        self.waypoints[w.symbol] = w
+        with self.db_lock:
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.WAYPOINT,[w]))
+        return w
     def Get_Shipyard(self, waypointSymbol):
         systemSymbol = waypointSymbol[0:waypointSymbol.find("-", 4)]
         path = f"/systems/{systemSymbol}/waypoints/{waypointSymbol}/shipyard"
@@ -547,14 +560,15 @@ if __name__ == "__main__":
     # pprint(st.Register("test_9871","CULT"))
     # exit()
     st.Login(os.getenv("TOKEN"))
-    st.Get_Systems(limit=3)
+    # st.Get_Systems(limit=3)
+    # pprint(st.Get_Waypoint("X1-AC10-73119Z"))
     # st.Get_Market("X1-JP81-52264Z")
     # exit()
     st.Init_Systems()
     pprint(st.Get_Ships())
     ship = list(st.ships.values())[0]
     # st.Navigate(ship.symbol,"X1-AC10-73119Z")
-    pprint(st.Get_JumpGate("X1-AC10-73119Z"))
+    # pprint(st.Get_JumpGate("X1-AC10-73119Z"))
     time.sleep(1)
     if False:
         st.cur.execute("""select systemsymbol from waypoints
