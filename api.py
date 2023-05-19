@@ -104,25 +104,25 @@ class SpaceTraders:
         ip = os.getenv("IP")
         port = os.getenv("PORT")
 
-        conn = psycopg2.connect(dbname=db,user=user,password=os.getenv("PASSWORD"),host=ip,port=port)
-        cur = conn.cursor()
-        cur.execute("CREATE TABLE IF NOT EXISTS waypoints (systemSymbol varchar, symbol varchar PRIMARY KEY, type varchar, x integer,y integer,orbitals varchar[],traits varchar[],chart varchar,faction varchar);")
-        cur.execute("CREATE TABLE IF NOT EXISTS systems (symbol varchar PRIMARY KEY, type varchar, x integer, y integer);")
-        cur.execute("CREATE TABLE IF NOT EXISTS markets (symbol varchar, good varchar, type varchar, PRIMARY KEY (symbol, good, type));")
-        cur.execute("CREATE TABLE IF NOT EXISTS shipyards (symbol varchar, shiptype varchar, PRIMARY KEY (symbol, shiptype));")
-        cur.execute("CREATE TABLE IF NOT EXISTS prices (waypointsymbol varchar, symbol varchar, supply varchar, purchase integer, sell integer,tradevolume integer,timestamp varchar, PRIMARY KEY (waypointsymbol, symbol,timestamp));")
-        cur.execute("CREATE TABLE IF NOT EXISTS transactions (WAYPOINTSYMBOL varchar, SHIPSYMBOL varchar, TRADESYMBOL varchar, TYPE varchar, UNITS integer, PRICEPERUNIT integer, TOTALPRICE integer, timestamp varchar, PRIMARY KEY (WAYPOINTSYMBOL,TRADESYMBOL,SHIPSYMBOL, timestamp));")
+        self.conn = psycopg2.connect(dbname=db,user=user,password=os.getenv("PASSWORD"),host=ip,port=port)
+        self.cur = self.conn.cursor()
+        self.cur.execute("CREATE TABLE IF NOT EXISTS waypoints (systemSymbol varchar, symbol varchar PRIMARY KEY, type varchar, x integer,y integer,orbitals varchar[],traits varchar[],chart varchar,faction varchar);")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS systems (symbol varchar PRIMARY KEY, type varchar, x integer, y integer);")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS markets (symbol varchar, good varchar, type varchar, PRIMARY KEY (symbol, good, type));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS shipyards (symbol varchar, shiptype varchar, PRIMARY KEY (symbol, shiptype));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS prices (waypointsymbol varchar, symbol varchar, supply varchar, purchase integer, sell integer,tradevolume integer,timestamp varchar, PRIMARY KEY (waypointsymbol, symbol,timestamp));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS transactions (WAYPOINTSYMBOL varchar, SHIPSYMBOL varchar, TRADESYMBOL varchar, TYPE varchar, UNITS integer, PRICEPERUNIT integer, TOTALPRICE integer, timestamp varchar, PRIMARY KEY (WAYPOINTSYMBOL,TRADESYMBOL,SHIPSYMBOL, timestamp));")
         
         # region reworked tables 
-        cur.execute("""CREATE TABLE IF NOT EXISTS SHIPS (SYMBOL CHARACTER varying NOT NULL, faction CHARACTER varying, ROLE CHARACTER varying, FRAME CHARACTER varying,  ENGINE CHARACTER varying,  SPEED CHARACTER varying,  MODULES CHARACTER varying[],  MOUNTS CHARACTER varying[],  cargo_capacity integer, PRIMARY KEY (SYMBOL));""")
-        cur.execute("""CREATE TABLE IF NOT EXISTS SHIPNAVS(SYMBOL CHARACTER varying NOT NULL, WAYPOINTSYMBOL CHARACTER varying, DEPARTURE CHARACTER varying, DESTINATION CHARACTER varying, ARRIVAL CHARACTER varying, DEPARTURETIME CHARACTER varying, STATUS CHARACTER varying, FLIGHTMODE CHARACTER varying, PRIMARY KEY (SYMBOL));""")
-        cur.execute("""CREATE TABLE IF NOT EXISTS SHIPCARGOS (SYMBOL CHARACTER varying, GOOD CHARACTER varying, UNITS integer, PRIMARY KEY (SYMBOL, GOOD));""")
-        cur.execute("""CREATE TABLE IF NOT EXISTS SHIPFUEL (SYMBOL CHARACTER varying, FUEL integer, CAPACITY integer, PRIMARY KEY (SYMBOL));""")
-        cur.execute("""CREATE TABLE IF NOT EXISTS SHIPCONSUMTION (SYMBOL CHARACTER varying, AMOUNT integer, DEPARTEDFROM CHARACTER varying, DESTINATION CHARACTER varying, FLIGHTMODE CHARACTER varying, FLIGHTTIME integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (SYMBOL, TIMESTAMP));""")
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS SHIPS (SYMBOL CHARACTER varying NOT NULL, faction CHARACTER varying, ROLE CHARACTER varying, FRAME CHARACTER varying,  ENGINE CHARACTER varying,  SPEED CHARACTER varying,  MODULES CHARACTER varying[],  MOUNTS CHARACTER varying[],  cargo_capacity integer, PRIMARY KEY (SYMBOL));""")
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS SHIPNAVS(SYMBOL CHARACTER varying NOT NULL, WAYPOINTSYMBOL CHARACTER varying, DEPARTURE CHARACTER varying, DESTINATION CHARACTER varying, ARRIVAL CHARACTER varying, DEPARTURETIME CHARACTER varying, STATUS CHARACTER varying, FLIGHTMODE CHARACTER varying, PRIMARY KEY (SYMBOL));""")
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS SHIPCARGOS (SYMBOL CHARACTER varying, GOOD CHARACTER varying, UNITS integer, PRIMARY KEY (SYMBOL, GOOD));""")
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS SHIPFUEL (SYMBOL CHARACTER varying, FUEL integer, CAPACITY integer, PRIMARY KEY (SYMBOL));""")
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS SHIPCONSUMTION (SYMBOL CHARACTER varying, AMOUNT integer, DEPARTEDFROM CHARACTER varying, DESTINATION CHARACTER varying, FLIGHTMODE CHARACTER varying, FLIGHTTIME integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (SYMBOL, TIMESTAMP));""")
         
-        cur.execute("""CREATE TABLE IF NOT EXISTS CREDITLEADERBOARD (AGENTSYMBOL CHARACTER varying, CREDITS integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));""")
-        cur.execute("""CREATE TABLE IF NOT EXISTS CHARTLEADERBOARD (AGENTSYMBOL CHARACTER varying, CHARTCOUNT integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));""")
-        conn.commit()
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS CREDITLEADERBOARD (AGENTSYMBOL CHARACTER varying, CREDITS integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));""")
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS CHARTLEADERBOARD (AGENTSYMBOL CHARACTER varying, CHARTCOUNT integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));""")
+        self.conn.commit()
         # endregion
 
         while True:
@@ -138,22 +138,22 @@ class SpaceTraders:
                         temp = []
                         for wp in wps:
                             temp.extend([wp.systemSymbol, wp.symbol,wp.type.name,wp.x,wp.y,[x.symbol for x in wp.orbitals],[x.symbol.name for x in wp.traits],wp.chart.submittedBy if wp.chart else "UNCHARTED",wp.faction.symbol if wp.faction else " "])
-                        cur.execute(f"""INSERT INTO waypoints (systemSymbol, symbol, type, x, y, orbitals, traits, chart,faction)
+                        self.cur.execute(f"""INSERT INTO waypoints (systemSymbol, symbol, type, x, y, orbitals, traits, chart,faction)
                             VALUES  {','.join([f'(%s, %s, %s, %s, %s, %s, %s, %s, %s)' for _ in range(int(len(temp)/9))])}
-                            ON CONFLICT (symbol) 
+                            ON CONFLICT (symbol)
                             DO UPDATE SET traits = excluded.traits, chart = excluded.chart,faction = excluded.faction """,temp)
-                        conn.commit()
+                        self.conn.commit()
                     elif q_obj.type == Queue_Obj_Type.SYSTEM:
                         systems:list[System] = q_obj.data
                         for i in range(ceil(len(systems)/1000)):
                             temp = []
                             for sys in systems[i*1000:min((i+1)*1000,len(systems))]:
                                 temp.extend([sys.symbol,sys.type.name,sys.x,sys.y])
-                            cur.execute(f"""INSERT INTO systems (symbol, type, x,y)
+                            self.cur.execute(f"""INSERT INTO systems (symbol, type, x,y)
                             VALUES {','.join([f'(%s, %s, %s, %s)' for _ in range(int(len(temp)/4))])} 
                             ON CONFLICT (symbol) DO NOTHING""",
                                 list(temp))
-                        conn.commit()
+                        self.conn.commit()
                     elif q_obj.type == Queue_Obj_Type.MARKET:
                         m:Market = q_obj.data
                         temp = []
@@ -164,15 +164,15 @@ class SpaceTraders:
                         for x in m.exchange:
                             temp.extend([m.symbol,x.symbol.name,"EXCHANGE"])
                         if len(temp)>0:
-                            cur.execute(f"""INSERT INTO markets (symbol, good, type)
-                            VALUES {','.join([f'(%s, %s, %s)' for _ in range(len(m.tradeGoods))])} 
+                            self.cur.execute(f"""INSERT INTO markets (symbol, good, type)
+                            VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])} 
                             ON CONFLICT (symbol, good, type) DO NOTHING""",
                                 list(temp))
                         if m.tradeGoods:
                             temp = []
                             for x in m.tradeGoods:
                                 temp.extend([m.symbol,x.symbol,x.supply.name,x.purchasePrice,x.sellPrice,x.tradeVolume,datetime.strftime(datetime.utcnow(),self.FORMAT_STR)])
-                            cur.execute(f"""INSERT INTO PRICES (WAYPOINTSYMBOL,symbol,SUPPLY,PURCHASE,SELL,TRADEVOLUME,TIMESTAMP)
+                            self.cur.execute(f"""INSERT INTO PRICES (WAYPOINTSYMBOL,symbol,SUPPLY,PURCHASE,SELL,TRADEVOLUME,TIMESTAMP)
                             VALUES {','.join([f'(%s, %s, %s, %s, %s, %s, %s)' for _ in range(int(len(temp)/7))])} 
                             ON CONFLICT (WAYPOINTSYMBOL, symbol, TIMESTAMP) DO UPDATE 
                             SET SUPPLY = excluded.SUPPLY,
@@ -180,7 +180,7 @@ class SpaceTraders:
                                 SELL = excluded.SELL,
                                 TRADEVOLUME = excluded.TRADEVOLUME""",
                                 list(temp))
-                        conn.commit()
+                        self.conn.commit()
                     elif q_obj.type == Queue_Obj_Type.SHIPYARD:
                         yard:list[Shipyard] = q_obj.data
                         temp = []
@@ -188,24 +188,24 @@ class SpaceTraders:
                             for shiptype in sy.shipTypes:
                                 temp.extend([sy.symbol,shiptype.name])
                             # temp.extend([wp.systemSymbol, wp.symbol,wp.type.name,wp.x,wp.y,[x.symbol for x in wp.orbitals],[x.symbol.name for x in wp.traits],wp.chart.submittedBy if wp.chart else "UNCHARTED",wp.faction.symbol if wp.faction else " "])
-                        cur.execute(f"""INSERT INTO shipyards (symbol,shiptype)
+                        self.cur.execute(f"""INSERT INTO shipyards (symbol,shiptype)
                             VALUES  {','.join([f'(%s, %s)' for _ in range(int(len(temp)/2))])}
                             ON CONFLICT (symbol,shiptype) 
                             DO NOTHING""",temp)
-                        conn.commit()
+                        self.conn.commit()
                     elif q_obj.type == Queue_Obj_Type.SHIP:
                         ships:list[Ship] = q_obj.data
                         temp = []
                         for s in ships:
                             temp.extend([s.symbol,s.registration.factionSymbol,s.registration.role,s.frame.symbol.name,s.engine.symbol.name,s.engine.speed,[x.symbol.name for x in s.modules],[x.symbol.name for x in s.mounts],s.cargo.capacity])
-                        cur.execute(f"""INSERT INTO SHIPS (SYMBOL, FACTION, ROLE, FRAME, ENGINE, SPEED, MODULES, MOUNTS, CARGO_CAPACITY)
+                        self.cur.execute(f"""INSERT INTO SHIPS (SYMBOL, FACTION, ROLE, FRAME, ENGINE, SPEED, MODULES, MOUNTS, CARGO_CAPACITY)
                         VALUES {','.join([f'(%s, %s, %s, %s,%s, %s, %s, %s,%s)' for _ in range(int(len(temp)/9))])} 
                         ON CONFLICT (SYMBOL) DO NOTHING""",
                             list(temp))
                         temp = []
                         for s in ships:
                             temp.extend([s.symbol,s.fuel.current,s.fuel.capacity])
-                        cur.execute(f"""INSERT INTO SHIPFUEL (SYMBOL, FUEL, CAPACITY)
+                        self.cur.execute(f"""INSERT INTO SHIPFUEL (SYMBOL, FUEL, CAPACITY)
                         VALUES {','.join([f'(%s,%s,%s)' for _ in range(int(len(temp)/3))])}
                         ON CONFLICT (SYMBOL) DO UPDATE SET FUEL=excluded.FUEL""",
                             list(temp))
@@ -213,40 +213,40 @@ class SpaceTraders:
                         for s in ships:
                             for c in s.cargo.inventory:
                                 temp.extend([s.symbol,c.symbol,c.units])
-                        cur.execute(f"""INSERT INTO SHIPCARGOS (SYMBOL, GOOD, UNITS)
+                        self.cur.execute(f"""INSERT INTO SHIPCARGOS (SYMBOL, GOOD, UNITS)
                             VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])}
                             ON CONFLICT (SYMBOL, GOOD) DO UPDATE SET UNITS = excluded.UNITS""",
                                 list(temp))
                         temp = []
                         for s in ships:
                             temp.extend([s.symbol,s.nav.waypointSymbol,s.nav.route.departure.symbol,s.nav.route.destination.symbol,s.nav.route.arrival,s.nav.route.departureTime,s.nav.status.name,s.nav.flightMode.name])
-                        cur.execute(f"""INSERT INTO SHIPNAVS (SYMBOL, WAYPOINTSYMBOL, DEPARTURE, DESTINATION, ARRIVAL, DEPARTURETIME, STATUS, FLIGHTMODE)
+                        self.cur.execute(f"""INSERT INTO SHIPNAVS (SYMBOL, WAYPOINTSYMBOL, DEPARTURE, DESTINATION, ARRIVAL, DEPARTURETIME, STATUS, FLIGHTMODE)
                             VALUES {','.join([f'(%s, %s, %s,%s, %s, %s,%s, %s)' for _ in range(int(len(temp)/8))])}
                             ON CONFLICT (SYMBOL) DO UPDATE SET WAYPOINTSYMBOL = excluded.WAYPOINTSYMBOL, DEPARTURE = excluded.DEPARTURE, DESTINATION = excluded.DESTINATION,ARRIVAL = excluded.ARRIVAL,DEPARTURETIME = excluded.DEPARTURETIME,STATUS = excluded.STATUS,FLIGHTMODE = excluded.FLIGHTMODE""",
                                 list(temp))
                         
-                        conn.commit()
+                        self.conn.commit()
                     elif q_obj.type == Queue_Obj_Type.SHIPNAV:
                         ship:Ship = q_obj.data
                         temp = []
                         for s in [ship]:
                             temp.extend([s.symbol,s.nav.waypointSymbol,s.nav.route.departure.symbol,s.nav.route.destination.symbol,s.nav.route.arrival,s.nav.route.departureTime,s.nav.status.name,s.nav.flightMode.name])
-                        cur.execute(f"""INSERT INTO SHIPNAVS (SYMBOL, WAYPOINTSYMBOL, DEPARTURE, DESTINATION, ARRIVAL, DEPARTURETIME, STATUS, FLIGHTMODE)
+                        self.cur.execute(f"""INSERT INTO SHIPNAVS (SYMBOL, WAYPOINTSYMBOL, DEPARTURE, DESTINATION, ARRIVAL, DEPARTURETIME, STATUS, FLIGHTMODE)
                             VALUES {','.join([f'(%s, %s, %s,%s, %s, %s,%s, %s)' for _ in range(int(len(temp)/8))])}
                             ON CONFLICT (SYMBOL) DO UPDATE SET WAYPOINTSYMBOL = excluded.WAYPOINTSYMBOL, DEPARTURE = excluded.DEPARTURE, DESTINATION = excluded.DESTINATION,ARRIVAL = excluded.ARRIVAL,DEPARTURETIME = excluded.DEPARTURETIME,STATUS = excluded.STATUS,FLIGHTMODE = excluded.FLIGHTMODE""",
                                 list(temp))
                         
-                        conn.commit()
+                        self.conn.commit()
                     elif q_obj.type == Queue_Obj_Type.SHIPFUEL:
                         ship:Ship = q_obj.data
                         temp = []
                         for s in [ships]:
                             temp.extend([s.symbol,s.fuel.current,s.fuel.capacity])
-                        cur.execute(f"""INSERT INTO SHIPFUEL (SYMBOL, FUEL, CAPACITY)
+                        self.cur.execute(f"""INSERT INTO SHIPFUEL (SYMBOL, FUEL, CAPACITY)
                         VALUES {','.join([f'(%s,%s,%s)' for _ in range(int(len(temp)/3))])}
                         ON CONFLICT (SYMBOL) DO UPDATE SET FUEL=excluded.FUEL""",
                             list(temp))
-                        conn.commit()
+                        self.conn.commit()
                     elif q_obj.type == Queue_Obj_Type.CONSUMPTION:
                         pass
                     elif q_obj.type == Queue_Obj_Type.LEADERBOARD:
@@ -254,32 +254,32 @@ class SpaceTraders:
                         temp = []
                         for c in lb["mostCredits"]:
                             temp.extend([c["agentSymbol"],c["credits"],datetime.strftime(datetime.utcnow(),self.FORMAT_STR)])
-                        cur.execute(f"""INSERT INTO CREDITLEADERBOARD (AGENTSYMBOL, CREDITS, TIMESTAMP)
+                        self.cur.execute(f"""INSERT INTO CREDITLEADERBOARD (AGENTSYMBOL, CREDITS, TIMESTAMP)
                             VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])}
                             ON CONFLICT (AGENTSYMBOL, TIMESTAMP) DO NOTHING""",
                                 list(temp))
                         temp = []
                         for c in lb["mostSubmittedCharts"]:
                             temp.extend([c["agentSymbol"],c["chartCount"],datetime.strftime(datetime.utcnow(),self.FORMAT_STR)])
-                        cur.execute(f"""INSERT INTO CHARTLEADERBOARD (AGENTSYMBOL, CHARTCOUNT, TIMESTAMP)
+                        self.cur.execute(f"""INSERT INTO CHARTLEADERBOARD (AGENTSYMBOL, CHARTCOUNT, TIMESTAMP)
                             VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])}
                             ON CONFLICT (AGENTSYMBOL, TIMESTAMP) DO NOTHING""",
                                 list(temp))
-                        conn.commit()
+                        self.conn.commit()
                 # TODO add the msg to db
                 # TODO add the queue-ing to all functions
             else:
                 time.sleep(.01)
     
     @ratelimit.sleep_and_retry
-    @ratelimit.limits(calls=2, period=1)
+    @ratelimit.limits(calls=3, period=1)
     def my_req(self, url, method, data=None, json=None):
         r = self.session.request(method, self.server+url, data=data, json=json)
 
         self.logger.info(f"{r.request.method} {r.request.url} {r.status_code}")
         self.logger.debug(f"{r.request.method} {r.request.url} {r.status_code} {r.text}")
 
-        if r.status_code == 429:
+        while r.status_code == 429:
             time.sleep(0.5)
             
             r = self.session.request(method, self.server+url, data=data, json=json)
@@ -433,8 +433,9 @@ class SpaceTraders:
             w = Waypoint(d)
             self.waypoints[w.symbol] = w
             way.append(w.symbol)
-        with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.WAYPOINT,[self.waypoints[w] for w in way]))
+        if len(way)>0:
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.WAYPOINT,[self.waypoints[w] for w in way]))
         return (way, meta)
     def Get_Shipyard(self, waypointSymbol):
         systemSymbol = waypointSymbol[0:waypointSymbol.find("-", 4)]
@@ -446,7 +447,7 @@ class SpaceTraders:
             return  # TODO raise error
         yard = Shipyard(data)
         self.shipyards[waypointSymbol] = yard
-        
+        # TODO add ship listings when at waypoint
         with self.db_lock:
             self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPYARD,yard))
         return yard
@@ -472,7 +473,7 @@ class SpaceTraders:
                 f.write(r.text)
             j = r.json()
             with self.db_lock:
-                self.db_queue.extend(Queue_Obj(Queue_Obj_Type.SHIP,[System(system) for system in j]))
+                self.db_queue.extend(Queue_Obj(Queue_Obj_Type.SYSTEM,[System(system) for system in j]))
         else:
             with open("systems.json", "r") as f:
                 j = json.load(f)
@@ -499,16 +500,52 @@ class SpaceTraders:
 if __name__ == "__main__":
     
     st = SpaceTraders()
+    st.Status()
+    # exit()
+    # pprint(st.Register("test_9871","CULT"))
+    # exit()
     st.Login(os.getenv("TOKEN"))
+    # st.Get_Market("X1-JP81-52264Z")
+    # exit()
+    st.Init_Systems()
+    time.sleep(1)
+    if False:
+        st.cur.execute("""select systemsymbol from waypoints
+                        group by systemsymbol""")   
+        st.conn.commit()
+        known = [p[0] for p in st.cur.fetchall()]
+
+        for syskey in st.systems.keys():
+            sys = st.systems[syskey]
+            if sys.symbol not in known:
+                l,meta = st.Get_Waypoints(sys.symbol)
+                if meta.total > 20:
+                    st.Get_Waypoints(sys.symbol,2)
+    if False:
+        st.cur.execute("""select symbol from waypoints
+                        where 'SHIPYARD' = any (traits)""")   
+        st.conn.commit()
+        shipyards = [p[0] for p in st.cur.fetchall()]   
+        for market in shipyards:
+            st.Get_Shipyard(market)
+    if False:
+        st.cur.execute("""select symbol from waypoints
+                        where 'MARKETPLACE' = any (traits)""")   
+        st.conn.commit()
+        markets = [p[0] for p in st.cur.fetchall()]   
+        for market in markets:
+            st.Get_Market(market)
     # st.Get_Market("X1-DF55-17335A")
     # pprint(st.Register("feba66","ASTRO"))
     # pprint(st.Get_Agent())
-    pprint(st.Get_Ships())
-    ship = list(st.ships.values())[0]
+    # pprint(st.Get_Ships())
+    # ship = list(st.ships.values())[0]
     # pprint(st.Get_Waypoints(ship.nav.systemSymbol))
     # pprint(st.Navigate(ship.symbol,"X1-AC10-39507F"))
     # pprint(st.Get_Market("X1-AC10-39507F"))
-    pprint(st.Get_Shipyard("X1-AC10-39507F"))
+    # pprint(st.Get_Shipyard("X1-AC10-39507F"))
     # st.Init_Systems()
     print("done")
-    time.sleep(2)
+    while len(st.db_queue)>0:
+        time.sleep(3)
+    
