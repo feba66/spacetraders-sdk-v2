@@ -240,7 +240,7 @@ class SpaceTraders:
                     elif q_obj.type == Queue_Obj_Type.SHIPFUEL:
                         ship:Ship = q_obj.data
                         temp = []
-                        for s in [ships]:
+                        for s in [ship]:
                             temp.extend([s.symbol,s.fuel.current,s.fuel.capacity])
                         self.cur.execute(f"""INSERT INTO SHIPFUEL (SYMBOL, FUEL, CAPACITY)
                         VALUES {','.join([f'(%s,%s,%s)' for _ in range(int(len(temp)/3))])}
@@ -340,6 +340,17 @@ class SpaceTraders:
             return  # TODO raise error
         self.agent = Agent(data)
         return self.agent
+    def Get_JumpGate(self, waypointSymbol):
+        systemSymbol = waypointSymbol[0:waypointSymbol.find("-", 4)]
+        path = f"/systems/{systemSymbol}/waypoints/{waypointSymbol}/jump-gate"
+        r = self.my_req(path, "get")
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        gate = JumpGate(data)
+        self.jumpgates[waypointSymbol] = gate
+        return gate
     # endregion
 
     # region done
@@ -508,6 +519,10 @@ if __name__ == "__main__":
     # st.Get_Market("X1-JP81-52264Z")
     # exit()
     st.Init_Systems()
+    pprint(st.Get_Ships())
+    ship = list(st.ships.values())[0]
+    # st.Navigate(ship.symbol,"X1-AC10-73119Z")
+    pprint(st.Get_JumpGate("X1-AC10-73119Z"))
     time.sleep(1)
     if False:
         st.cur.execute("""select systemsymbol from waypoints
@@ -539,7 +554,6 @@ if __name__ == "__main__":
     # pprint(st.Register("feba66","ASTRO"))
     # pprint(st.Get_Agent())
     # pprint(st.Get_Ships())
-    # ship = list(st.ships.values())[0]
     # pprint(st.Get_Waypoints(ship.nav.systemSymbol))
     # pprint(st.Navigate(ship.symbol,"X1-AC10-39507F"))
     # pprint(st.Get_Market("X1-AC10-39507F"))
