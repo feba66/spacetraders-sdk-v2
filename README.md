@@ -40,11 +40,11 @@ Class          | HTTP request  | Description   | Implemented
 | *Fleet*      | **post** /my/ships/{shipSymbol}/survey | Create Survey | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/extract | Extract Resources | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/jettison | Jettison Cargo | 
-| *Fleet*      | **post** /my/ships/{shipSymbol}/jump | Jump Ship | 
+| *Fleet*      | **post** /my/ships/{shipSymbol}/jump | Jump Ship | statekeeping & db/2
 | *Fleet*      | **post** /my/ships/{shipSymbol}/navigate | Navigate Ship | statekeeping & db
 | *Fleet*      | **patch** /my/ships/{shipSymbol}/nav | Patch Ship Nav | 
 | *Fleet*      | **get** /my/ships/{shipSymbol}/nav | Get Ship Nav | 
-| *Fleet*      | **post** /my/ships/{shipSymbol}/warp | Warp Ship | 
+| *Fleet*      | **post** /my/ships/{shipSymbol}/warp | Warp Ship | statekeeping & db
 | *Fleet*      | **post** /my/ships/{shipSymbol}/sell | Sell Cargo | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/scan/systems | Scan Systems | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/scan/waypoints | Scan Waypoints | 

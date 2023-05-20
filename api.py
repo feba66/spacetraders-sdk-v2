@@ -13,7 +13,7 @@ from pprint import pprint
 from dotenv import load_dotenv
 from dataclasses import dataclass
 from enum import Enum
-from enums import Factions
+from enums import Factions, WaypointType
 from objects import Agent, Contract, Cooldown, Faction, JumpGate, Market, Meta, Ship, ShipFuel, ShipNav, Shipyard, Survey, System, Waypoint
 
 class Queue_Obj_Type(Enum):
@@ -552,7 +552,22 @@ class SpaceTraders:
     # survey
     # extract
     # jettison
-    # jump
+    def Jump(self, shipSymbol, systemSymbol):  
+        path = f"/my/ships/{shipSymbol}/jump"
+        r = self.my_req(path, "post", data={"systemSymbol": systemSymbol})
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        shipnav = ShipNav(data["nav"])
+        cooldown = Cooldown(data["cooldown"])
+        if shipSymbol in self.ships:
+            self.ships[shipSymbol].nav = shipnav
+            self.cooldowns[shipSymbol] = cooldown
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
+                # self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol])) # TODO cooldown to db
+        return (shipnav, cooldown)
     def Navigate(self, shipSymbol, waypointSymbol):
         path = f"/my/ships/{shipSymbol}/navigate"
         r = self.my_req(path, "post", data={"waypointSymbol": waypointSymbol})
@@ -569,7 +584,22 @@ class SpaceTraders:
                 self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
                 self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol]))
         return (shipnav, shipfuel)
-    # warp
+    def Warp(self, shipSymbol, waypointSymbol):  
+        path = f"/my/ships/{shipSymbol}/warp"
+        r = self.my_req(path, "post", data={"waypointSymbol": waypointSymbol})
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        shipnav = ShipNav(data["nav"])
+        shipfuel = ShipFuel(data["fuel"])
+        if shipSymbol in self.ships:
+            self.ships[shipSymbol].nav = shipnav
+            self.ships[shipSymbol].fuel = shipfuel
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol]))
+        return (shipnav, shipfuel)
     # sell
     # scan systems
     # scan waypoints
@@ -597,7 +627,16 @@ if __name__ == "__main__":
     pprint(st.Get_Ships())
     ship = list(st.ships.values())[0]
     # st.Navigate(ship.symbol,"X1-AC10-73119Z")
-    # pprint(st.Get_JumpGate("X1-AC10-73119Z"))
+    # gate = st.Get_JumpGate("X1-AC10-73119Z")
+    # pprint(gate.connectedSystems[0:10])
+    wps,_ = st.Get_Waypoints("X1-SR51")
+    warpGoal = ""
+    for w in wps:
+        if st.waypoints[w].type == WaypointType.JUMP_GATE:
+            warpGoal=w
+            break
+    pprint(st.Jump(ship.symbol,"X1-SR51"))
+    # pprint(st.Warp(ship.symbol,"X1-AC10-73119Z"))
     time.sleep(1)
     if False:
         st.cur.execute("""select systemsymbol from waypoints
