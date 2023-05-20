@@ -15,6 +15,7 @@ py api.py
 - [ ] add monitoring, measure time of the requests and send them to the db aswell
 - [ ] add cooldown to database
 - [ ] add contracts to database
+- [ ] add survey to database
 
 ## Documentation for API Endpoints
 
@@ -39,7 +40,7 @@ Class          | HTTP request  | Description   | Implemented
 | *Fleet*      | **post** /my/ships/{shipSymbol}/chart | Create Chart | statekeeping & db
 | *Fleet*      | **get** /my/ships/{shipSymbol}/cooldown | Get Ship Cooldown | statekeeping
 | *Fleet*      | **post** /my/ships/{shipSymbol}/dock | Dock Ship | statekeeping & db
-| *Fleet*      | **post** /my/ships/{shipSymbol}/survey | Create Survey | 
+| *Fleet*      | **post** /my/ships/{shipSymbol}/survey | Create Survey | statekeeping
 | *Fleet*      | **post** /my/ships/{shipSymbol}/extract | Extract Resources | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/jettison | Jettison Cargo | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/jump | Jump Ship | statekeeping & db/2

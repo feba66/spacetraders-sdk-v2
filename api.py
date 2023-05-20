@@ -56,8 +56,9 @@ class Queue_Obj:
 
 class SpaceTraders:
     FORMAT_STR = "%Y-%m-%dT%H:%M:%S.%fZ"
-    server = "https://api.spacetraders.io/v2"
+    SERVER_URL = "https://api.spacetraders.io/v2"
 
+    # region variables
     session: requests.Session
     logger: logging.Logger
 
@@ -78,6 +79,7 @@ class SpaceTraders:
     jumpgates: dict[str, JumpGate]
     cooldowns: dict[str, Cooldown]
     surveys: dict[str, Survey]
+    # endregion
 
     def __init__(self) -> None:
         load_dotenv(".env")
@@ -473,7 +475,7 @@ class SpaceTraders:
     @ratelimit.sleep_and_retry
     @ratelimit.limits(calls=3, period=1)
     def my_req(self, url, method, data=None, json=None):
-        r = self.session.request(method, self.server + url, data=data, json=json)
+        r = self.session.request(method, self.SERVER_URL + url, data=data, json=json)
 
         self.logger.info(f"{r.request.method} {r.request.url} {r.status_code}")
         self.logger.debug(
@@ -483,7 +485,7 @@ class SpaceTraders:
         while r.status_code == 429:
             time.sleep(0.5)
 
-            r = self.session.request(method, self.server + url, data=data, json=json)
+            r = self.session.request(method, self.SERVER_URL + url, data=data, json=json)
 
             self.logger.info(f"{r.request.method} {r.request.url} {r.status_code}")
             self.logger.debug(
@@ -507,8 +509,13 @@ class SpaceTraders:
     def time_till(self, future):
         return self.get_time_diff(self.parse_time(future), datetime.utcnow())
 
-    def sleep_till(self, nav: ShipNav):
-        t = max(0, self.time_till(nav.route.arrival))
+    def sleep_till(self, nav: ShipNav=None,cooldown: Cooldown = None):
+        if nav != None:
+            t = max(0, self.time_till(nav.route.arrival))
+        elif cooldown != None:
+            t = max(0, self.time_till(cooldown.expiration))
+        else:
+            return
         self.logger.info(f"Sleep for {t}")
         time.sleep(t)
 
@@ -915,6 +922,7 @@ class SpaceTraders:
         with self.db_lock:
             self.db_queue.append(Queue_Obj(Queue_Obj_Type.WAYPOINT, [waypoint]))
         return (chart, waypoint)
+
     def Get_Cooldown(self, shipSymbol):
         path = f"/my/ships/{shipSymbol}/cooldown"
         r = self.my_req(path, "get")
@@ -922,16 +930,11 @@ class SpaceTraders:
         data = j["data"] if "data" in j else None
         if data == None:
             return  # TODO raise error
-        cargo = ShipCargo(data)
-        if shipSymbol in self.ships:
-            self.ships[shipSymbol].cargo = cargo
-            with self.db_lock:
-                self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SHIPCARGO, self.ships[shipSymbol])
-                )
-        return cargo
+        
+        cooldown = Cooldown(data)
+        self.cooldowns[shipSymbol] = cooldown
+        return cooldown
 
-    
     def Dock(self, shipSymbol):
         path = f"/my/ships/{shipSymbol}/dock"
         r = self.my_req(path, "post")
@@ -948,7 +951,22 @@ class SpaceTraders:
                 )
         return self.ships[shipSymbol].nav
 
-    # survey
+    def Survey(self, shipSymbol, systemSymbol):
+        path = f"/my/ships/{shipSymbol}/survey"
+        r = self.my_req(path, "post")
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        cooldown = Cooldown(data["cooldown"])
+        self.cooldowns[shipSymbol] = cooldown
+        surveys=[]
+        for s in data["surveys"]:
+            survey = Survey(s)
+            surveys.append(survey)
+            self.surveys[survey.signature]=survey # TODO add survey to database
+        # self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol])) # TODO cooldown to db
+        return (surveys,cooldown)
     # extract
     # jettison
     def Jump(self, shipSymbol, systemSymbol):
@@ -960,7 +978,7 @@ class SpaceTraders:
             return  # TODO raise error
         cooldown = Cooldown(data)
         self.cooldowns[shipSymbol] = cooldown
-        
+
         # self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol])) # TODO cooldown to db
         return cooldown
 
@@ -1042,7 +1060,7 @@ class SpaceTraders:
                 self.db_queue.append(
                     Queue_Obj(Queue_Obj_Type.SHIPFUEL, self.ships[shipSymbol])
                 )
-        return (self.agent, fuel,transaction)
+        return (self.agent, fuel, transaction)
 
     def Purchase(self, shipSymbol, symbol, units):
         path = f"/my/ships/{shipSymbol}/purchase"
@@ -1094,7 +1112,7 @@ if __name__ == "__main__":
     st.Login(os.getenv("TOKEN"))
     # pprint(st.Get_Contracts())
     # c_id = "clhmfp5wa0734s60dmss50pes"
-
+    # st.Navigate()
     # pprint(st.Accept_Contract(c_id))
     # exit()
     # pprint(st.Register("test_9871","CULT"))
@@ -1104,9 +1122,11 @@ if __name__ == "__main__":
     # st.Get_Market("X1-JP81-52264Z")
     # exit()
     st.Init_Systems()
-    pprint(st.Get_Ships())
+    st.Get_Ships()
     ship = list(st.ships.values())[0]
-    # st.Navigate(ship.symbol,"X1-AC10-73119Z")
+    nav, fuel = st.Navigate(ship.symbol, "X1-UY52-72325C")
+    st.sleep_till(nav)
+    # st.Get_Shipyard("X1-UY52-72027D")
     # gate = st.Get_JumpGate("X1-AC10-73119Z")
     # pprint(gate.connectedSystems[0:10])
     # wps,_ = st.Get_Waypoints("X1-SR51")
@@ -1146,7 +1166,7 @@ if __name__ == "__main__":
             """select symbol from waypoints
                         where 'MARKETPLACE' = any (traits)"""
         )
-        
+
         st.conn.commit()
         markets = [p[0] for p in st.cur.fetchall()]
         for market in markets:
