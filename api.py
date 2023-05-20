@@ -336,10 +336,7 @@ class SpaceTraders:
         time.sleep(t)
     # endregion
 
-    # region added
-    # endregion
-
-    # region statekeeping
+    # region endpoints
     def Register(self, symbol: str, faction: Factions,email:str=None, login=True):
         path = "/register"
         if 3 > len(symbol) > 14:
@@ -363,34 +360,6 @@ class SpaceTraders:
         if login:
             self.Login(token)
         return token
-    # region Agents
-    def Get_Agent(self):
-        path = "/my/agent"
-        r = self.my_req(path, "get")
-        j = r.json()
-        data = j["data"] if "data" in j else None
-        if data == None:
-            return  # TODO raise error
-        self.agent = Agent(data)
-        return self.agent
-    # endregion
-
-    # region Systems
-    def Get_JumpGate(self, waypointSymbol):
-        systemSymbol = waypointSymbol[0:waypointSymbol.find("-", 4)]
-        path = f"/systems/{systemSymbol}/waypoints/{waypointSymbol}/jump-gate"
-        r = self.my_req(path, "get")
-        j = r.json()
-        data = j["data"] if "data" in j else None
-        if data == None:
-            return  # TODO raise error
-        gate = JumpGate(data)
-        self.jumpgates[waypointSymbol] = gate
-        return gate
-    # endregion
-    # endregion
-
-    # region statekeeping & db
     def Status(self):
         path ="/"
         r = self.my_req(path, "get")
@@ -400,6 +369,15 @@ class SpaceTraders:
         except:
             pass
         return r
+    def Get_Agent(self):
+        path = "/my/agent"
+        r = self.my_req(path, "get")
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        self.agent = Agent(data)
+        return self.agent
     
     #region Systems
     def Get_Systems(self, page=1, limit=20):
@@ -507,10 +485,96 @@ class SpaceTraders:
         with self.db_lock:
             self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPYARD,yard))
         return yard
+    def Get_JumpGate(self, waypointSymbol):
+        systemSymbol = waypointSymbol[0:waypointSymbol.find("-", 4)]
+        path = f"/systems/{systemSymbol}/waypoints/{waypointSymbol}/jump-gate"
+        r = self.my_req(path, "get")
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        gate = JumpGate(data)
+        self.jumpgates[waypointSymbol] = gate
+        return gate
     #endregion
     
     # region Contracts
+    def Get_Contracts(self, page=1, limit=20):
+        path = f"/my/contracts?page={page}&limit={limit}"
+        r = self.my_req(path, "get")
+        j = r.json()
 
+        meta = Meta(j["meta"]) if "meta" in j else None
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        contracts=[]
+        for d in data:
+            contract = Contract(d)
+            contracts.append(contract)
+            self.contracts[contract.id]=contract
+        # with self.db_lock:
+        #     self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
+        return (contracts,meta)
+    def Get_Contract(self, contractId):
+        path = f"/my/contracts/{contractId}"
+        r = self.my_req(path, "get")
+        j = r.json()
+
+        meta = Meta(j["meta"]) if "meta" in j else None
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        contract = Contract(data)
+        self.contracts[contract.id]=contract
+        # with self.db_lock:
+        #     self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
+        return contract
+    def Accept_Contract(self, contractId):
+        path = f"/my/contracts/{contractId}/accept"
+        r = self.my_req(path, "post")
+        j = r.json()
+
+        self.agent = Agent(data["agent"])
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        contract = Contract(data)
+        self.contracts[contract.id]=contract
+        # with self.db_lock:
+        #     self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
+        return contract
+    def Deliver_Contract(self, contractId,shipSymbol,tradeSymbol,units):
+        path = f"/my/contracts/{contractId}/deliver"
+        r = self.my_req(path, "post",data={"shipSymbol": shipSymbol, "tradeSymbol": tradeSymbol, "units": units})
+        j = r.json()
+
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        contract = Contract(data)
+        self.contracts[contract.id]=contract
+        cargo = ShipCargo(data["cargo"])
+        if shipSymbol in self.ships:
+            self.ships[shipSymbol].cargo = cargo
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPCARGO,[self.ships[shipSymbol]]))
+                # self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
+        return contract
+    def Fulfill_Contract(self, contractId):
+        path = f"/my/contracts/{contractId}/fulfill"
+        r = self.my_req(path, "post")
+        j = r.json()
+
+        self.agent = Agent(data["agent"])
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        contract = Contract(data)
+        self.contracts[contract.id]=contract
+        # with self.db_lock:
+        #     self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
+        return contract
     # endregion
     # region Factions
     def Get_Factions(self, page=1, limit=20):
@@ -544,7 +608,6 @@ class SpaceTraders:
         with self.db_lock:
             self.db_queue.append(Queue_Obj(Queue_Obj_Type.Faction,[faction]))
         return faction
-    
     # endregion
 
     # region Fleet
@@ -732,10 +795,15 @@ if __name__ == "__main__":
     
     st = SpaceTraders()
     st.Status()
-    # exit()
+
+    st.Login(os.getenv("TOKEN"))
+    # pprint(st.Get_Contracts())
+    c_id = "clhmfp5wa0734s60dmss50pes"
+    
+    pprint(st.Accept_Contract(c_id))
+    exit()
     # pprint(st.Register("test_9871","CULT"))
     # exit()
-    st.Login(os.getenv("TOKEN"))
     # st.Get_Systems(limit=3)
     # pprint(st.Get_Waypoint("X1-AC10-73119Z"))
     # st.Get_Market("X1-JP81-52264Z")

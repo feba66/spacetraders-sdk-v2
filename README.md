@@ -13,6 +13,8 @@ py api.py
 - [ ] database connections
 - [ ] error handling
 - [ ] add monitoring, measure time of the requests and send them to the db aswell
+- [ ] add cooldown to database
+- [ ] add contracts to database
 
 ## Documentation for API Endpoints
 
@@ -21,15 +23,15 @@ Class          | HTTP request  | Description   | Implemented
 |              | **get** /     | Status        | leaderboard db
 |              | **post** /register | Register New Agent | statekeeping
 | *Agents*     | **get** /my/agent | Fetch your agent's details. | statekeeping
-| *Contracts*  | **post** /my/contracts/{contractId}/accept | Accept a contract. | 
-| *Contracts*  | **post** /my/contracts/{contractId}/deliver | Deliver cargo on a given contract. | 
-| *Contracts*  | **post** /my/contracts/{contractId}/fulfill | Fulfill a contract | 
-| *Contracts*  | **get** /my/contracts/{contractId} | Get the details of a contract by ID. | 
-| *Contracts*  | **get** /my/contracts | List all of your contracts. | 
+| *Contracts*  | **get** /my/contracts | List all of your contracts. | statekeeping 
+| *Contracts*  | **get** /my/contracts/{contractId} | Get the details of a contract by ID. | statekeeping 
+| *Contracts*  | **post** /my/contracts/{contractId}/accept | Accept a contract. | statekeeping
+| *Contracts*  | **post** /my/contracts/{contractId}/deliver | Deliver cargo on a given contract. | statekeeping & db/2
+| *Contracts*  | **post** /my/contracts/{contractId}/fulfill | Fulfill a contract | statekeeping
 | *Factions*   | **get** /factions | List all discovered factions in the game. | statekeeping & db
 | *Factions*   | **get** /factions/{factionSymbol} | View the details of a faction. | statekeeping & db
 | *Fleet*      | **get** /my/ships | Retrieve all of your ships. | statekeeping & db
-| *Fleet*      | **post** /my/ships | Purchase a ship | statekeeping & half db
+| *Fleet*      | **post** /my/ships | Purchase a ship | statekeeping & db/2
 | *Fleet*      | **get** /my/ships/{shipSymbol} | Retrieve the details of your ship. |  statekeeping & db
 | *Fleet*      | **get** /my/ships/{shipSymbol}/cargo | Retrieve the cargo of your ship. |  
 | *Fleet*      | **post** /my/ships/{shipSymbol}/orbit | Orbit Ship | statekeeping & db
