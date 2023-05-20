@@ -40,12 +40,13 @@ class Agent:
     symbol: str
     headquarters: str
     credits: int
-
+    startingFaction: str
     def __init__(self, data) -> None:
         self.accountId = data["accountId"]
         self.symbol = data["symbol"]
         self.headquarters = data["headquarters"]
         self.credits = data["credits"]
+        self.startingFaction = data["startingFaction"]
 
 
 @dataclass
@@ -126,6 +127,7 @@ class Faction:
     traits: list[FactionTrait]
     name: str
     description: str
+    isRecruiting: bool
 
     def __init__(self, data) -> None:
         self.symbol = data["symbol"]
@@ -133,6 +135,7 @@ class Faction:
         self.name = data["name"]
         self.description = data["description"]
         self.traits = [FactionTrait(t) for t in data["traits"]]
+        self.isRecruiting = data["isRecruiting"]
 
 
 @dataclass

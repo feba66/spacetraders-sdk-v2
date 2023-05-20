@@ -37,13 +37,14 @@ Class          | HTTP request  | Description   | Implemented
 | *Fleet*      | **post** /my/ships/{shipSymbol}/orbit | Orbit Ship | statekeeping & db
 | *Fleet*      | **post** /my/ships/{shipSymbol}/refine | Ship Refine | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/chart | Create Chart | statekeeping & db
-| *Fleet*      | **get** /my/ships/{shipSymbol}/cooldown | Get Ship Cooldown | 
+| *Fleet*      | **get** /my/ships/{shipSymbol}/cooldown | Get Ship Cooldown | statekeeping
 | *Fleet*      | **post** /my/ships/{shipSymbol}/dock | Dock Ship | statekeeping & db
 | *Fleet*      | **post** /my/ships/{shipSymbol}/survey | Create Survey | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/extract | Extract Resources | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/jettison | Jettison Cargo | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/jump | Jump Ship | statekeeping & db/2
 | *Fleet*      | **post** /my/ships/{shipSymbol}/navigate | Navigate Ship | statekeeping & db
+| *Fleet*      |**post** /my/ships/{shipSymbol}/negotiate/contract | Negotiate Contract |
 | *Fleet*      | **patch** /my/ships/{shipSymbol}/nav | Patch Ship Nav | 
 | *Fleet*      | **get** /my/ships/{shipSymbol}/nav | Get Ship Nav | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/warp | Warp Ship | statekeeping & db

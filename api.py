@@ -915,8 +915,23 @@ class SpaceTraders:
         with self.db_lock:
             self.db_queue.append(Queue_Obj(Queue_Obj_Type.WAYPOINT, [waypoint]))
         return (chart, waypoint)
+    def Get_Cooldown(self, shipSymbol):
+        path = f"/my/ships/{shipSymbol}/cooldown"
+        r = self.my_req(path, "get")
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        cargo = ShipCargo(data)
+        if shipSymbol in self.ships:
+            self.ships[shipSymbol].cargo = cargo
+            with self.db_lock:
+                self.db_queue.append(
+                    Queue_Obj(Queue_Obj_Type.SHIPCARGO, self.ships[shipSymbol])
+                )
+        return cargo
 
-    # cooldown
+    
     def Dock(self, shipSymbol):
         path = f"/my/ships/{shipSymbol}/dock"
         r = self.my_req(path, "post")
@@ -943,17 +958,11 @@ class SpaceTraders:
         data = j["data"] if "data" in j else None
         if data == None:
             return  # TODO raise error
-        shipnav = ShipNav(data["nav"])
-        cooldown = Cooldown(data["cooldown"])
-        if shipSymbol in self.ships:
-            self.ships[shipSymbol].nav = shipnav
-            self.cooldowns[shipSymbol] = cooldown
-            with self.db_lock:
-                self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SHIPNAV, self.ships[shipSymbol])
-                )
-                # self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol])) # TODO cooldown to db
-        return (shipnav, cooldown)
+        cooldown = Cooldown(data)
+        self.cooldowns[shipSymbol] = cooldown
+        
+        # self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol])) # TODO cooldown to db
+        return cooldown
 
     def Navigate(self, shipSymbol, waypointSymbol):
         path = f"/my/ships/{shipSymbol}/navigate"
@@ -1026,13 +1035,14 @@ class SpaceTraders:
             return  # TODO raise error
         self.agent = Agent(data["agent"])
         fuel = ShipFuel(data["fuel"])
+        transaction = MarketTransaction(data["transaction"])
         if shipSymbol in self.ships:
             self.ships[shipSymbol].fuel = fuel
             with self.db_lock:
                 self.db_queue.append(
                     Queue_Obj(Queue_Obj_Type.SHIPFUEL, self.ships[shipSymbol])
                 )
-        return (self.agent, fuel)
+        return (self.agent, fuel,transaction)
 
     def Purchase(self, shipSymbol, symbol, units):
         path = f"/my/ships/{shipSymbol}/purchase"
@@ -1083,7 +1093,7 @@ if __name__ == "__main__":
     # pprint(st.Register("feba_66","ASTRO"))
     st.Login(os.getenv("TOKEN"))
     # pprint(st.Get_Contracts())
-    c_id = "clhmfp5wa0734s60dmss50pes"
+    # c_id = "clhmfp5wa0734s60dmss50pes"
 
     # pprint(st.Accept_Contract(c_id))
     # exit()
@@ -1108,7 +1118,7 @@ if __name__ == "__main__":
     # pprint(st.Jump(ship.symbol,"X1-AC10"))
     # pprint(st.Warp(ship.symbol,"X1-AC10-73119Z"))
     time.sleep(1)
-    if True:
+    if False:
         st.cur.execute(
             """select systemsymbol from waypoints
                         group by systemsymbol"""
@@ -1122,7 +1132,7 @@ if __name__ == "__main__":
                 l, meta = st.Get_Waypoints(sys.symbol)
                 if meta.total > 20:
                     st.Get_Waypoints(sys.symbol, 2)
-    if True:
+    if False:
         st.cur.execute(
             """select symbol from waypoints
                         where 'SHIPYARD' = any (traits)"""
@@ -1131,11 +1141,12 @@ if __name__ == "__main__":
         shipyards = [p[0] for p in st.cur.fetchall()]
         for market in shipyards:
             st.Get_Shipyard(market)
-    if True:
+    if False:
         st.cur.execute(
             """select symbol from waypoints
                         where 'MARKETPLACE' = any (traits)"""
         )
+        
         st.conn.commit()
         markets = [p[0] for p in st.cur.fetchall()]
         for market in markets:
