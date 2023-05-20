@@ -45,13 +45,13 @@ Class          | HTTP request  | Description   | Implemented
 | *Fleet*      | **patch** /my/ships/{shipSymbol}/nav | Patch Ship Nav | 
 | *Fleet*      | **get** /my/ships/{shipSymbol}/nav | Get Ship Nav | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/warp | Warp Ship | statekeeping & db
-| *Fleet*      | **post** /my/ships/{shipSymbol}/sell | Sell Cargo | 
+| *Fleet*      | **post** /my/ships/{shipSymbol}/sell | Sell Cargo | statekeeping & db
 | *Fleet*      | **post** /my/ships/{shipSymbol}/scan/systems | Scan Systems | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/scan/waypoints | Scan Waypoints | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/scan/ships | Scan Ships | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/refuel | Refuel Ship | 
-| *Fleet*      | **post** /my/ships/{shipSymbol}/purchase | Purchase Cargo | 
-| *Fleet*      | **post** /my/ships/{shipSymbol}/transfer | Transfer Cargo | 
+| *Fleet*      | **post** /my/ships/{shipSymbol}/purchase | Purchase Cargo | statekeeping & db
+| *Fleet*      | **post** /my/ships/{shipSymbol}/transfer | Transfer Cargo | statekeeping & db
 | *Systems*    | **get** /systems | List Systems | statekeeping & db
 | *Systems*    | **get** /systems.json | Get all systems. |  statekeeping & db
 | *Systems*    | **get** /systems/{systemSymbol} | Get System | statekeeping & db

@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from dataclasses import dataclass
 from enum import Enum
 from enums import Factions, WaypointType
-from objects import Agent, Contract, Cooldown, Faction, JumpGate, Market, Meta, Ship, ShipFuel, ShipNav, Shipyard, Survey, System, Waypoint
+from objects import Agent, Contract, Cooldown, Faction, JumpGate, Market, MarketTransaction, Meta, Ship, ShipCargo, ShipFuel, ShipNav, Shipyard, Survey, System, Waypoint
 
 class Queue_Obj_Type(Enum):
     WAYPOINT=1,
@@ -24,6 +24,7 @@ class Queue_Obj_Type(Enum):
     SHIP=5,
     SHIPNAV=8,
     SHIPFUEL=9,
+    SHIPCARGO=10,
     CONSUMPTION=6,
     LEADERBOARD=7
 @dataclass
@@ -106,6 +107,7 @@ class SpaceTraders:
 
         self.conn = psycopg2.connect(dbname=db,user=user,password=os.getenv("PASSWORD"),host=ip,port=port)
         self.cur = self.conn.cursor()
+
         self.cur.execute("CREATE TABLE IF NOT EXISTS waypoints (systemSymbol varchar, symbol varchar PRIMARY KEY, type varchar, x integer,y integer,orbitals varchar[],traits varchar[],chart varchar,faction varchar);")
         self.cur.execute("CREATE TABLE IF NOT EXISTS systems (symbol varchar PRIMARY KEY, type varchar, x integer, y integer);")
         self.cur.execute("CREATE TABLE IF NOT EXISTS markets (symbol varchar, good varchar, type varchar, PRIMARY KEY (symbol, good, type));")
@@ -226,6 +228,16 @@ class SpaceTraders:
                                 list(temp))
                         
                         self.conn.commit()
+                    elif q_obj.type == Queue_Obj_Type.SHIPCARGO:
+                        ships:list[Ship] = q_obj.data
+                        temp = []
+                        for s in ships:
+                            for c in s.cargo.inventory:
+                                temp.extend([s.symbol,c.symbol,c.units])
+                        self.cur.execute(f"""INSERT INTO SHIPCARGOS (SYMBOL, GOOD, UNITS)
+                            VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])}
+                            ON CONFLICT (SYMBOL, GOOD) DO UPDATE SET UNITS = excluded.UNITS""",
+                                list(temp))
                     elif q_obj.type == Queue_Obj_Type.SHIPNAV:
                         ship:Ship = q_obj.data
                         temp = []
@@ -600,13 +612,51 @@ class SpaceTraders:
                 self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
                 self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol]))
         return (shipnav, shipfuel)
-    # sell
+    def Sell(self, shipSymbol, symbol, units):
+        path = f"/my/ships/{shipSymbol}/sell"
+        r = self.my_req(path, "post", data={"symbol": symbol, "units": units})
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        self.agent = Agent(data["agent"])
+        transaction = MarketTransaction(data["transaction"])
+        if shipSymbol in self.ships:
+            self.ships[shipSymbol].cargo = ShipCargo(data["cargo"])
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPCARGO,[self.ships[shipSymbol]]))
+        return (self.agent, self.ships[shipSymbol].cargo,transaction)
     # scan systems
     # scan waypoints
     # scan ships
     # refuel
-    # purchase
-    # transfer
+    def Purchase(self, shipSymbol, symbol, units):
+        path = f"/my/ships/{shipSymbol}/purchase"
+        r = self.my_req(path, "post", data={"symbol": symbol, "units": units})
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        self.agent = Agent(data["agent"])
+        transaction = MarketTransaction(data["transaction"])
+        if shipSymbol in self.ships:
+            self.ships[shipSymbol].cargo = ShipCargo(data["cargo"])
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPCARGO,[self.ships[shipSymbol]]))
+        return (self.agent, self.ships[shipSymbol].cargo,transaction)
+    def Transfer(self, shipSymbol, symbol, units, recvShipSymbol):  
+        path = f"/my/ships/{shipSymbol}/transfer"
+        r = self.my_req(path, "post", data={"tradeSymbol": symbol, "units": units,"shipSymbol":recvShipSymbol})
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        cargo = ShipCargo(data["cargo"])
+        if shipSymbol in self.ships:
+            self.ships[shipSymbol].cargo = cargo
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPCARGO,[self.ships[shipSymbol]]))
+        return cargo
     # endregion
 
     
@@ -635,7 +685,7 @@ if __name__ == "__main__":
         if st.waypoints[w].type == WaypointType.JUMP_GATE:
             warpGoal=w
             break
-    pprint(st.Jump(ship.symbol,"X1-SR51"))
+    pprint(st.Jump(ship.symbol,"X1-AC10"))
     # pprint(st.Warp(ship.symbol,"X1-AC10-73119Z"))
     time.sleep(1)
     if False:
