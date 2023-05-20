@@ -54,7 +54,8 @@ class Contract:
     factionSymbol:str
     fulfilled:bool
     accepted:bool
-    expiration:str
+    expiration:Optional[str]
+    deadlineToAccept:Optional[str]
     id:str
     type:ContractType
 
@@ -63,7 +64,8 @@ class Contract:
         self.id = data["id"]
         self.fulfilled = data["fulfilled"]
         self.accepted = data["accepted"]
-        self.expiration = data["expiration"]
+        self.expiration = data["expiration"] if "expiration" in data else None
+        self.deadlineToAccept = data["deadlineToAccept"] if "deadlineToAccept" in data else None
         self.factionSymbol = data["factionSymbol"]
         self.type = ContractType[data["type"]]
 @dataclass
@@ -509,11 +511,13 @@ class Cooldown:
     totalSeconds:int
     expiration:str
     shipSymbol:str
+    expiredAt:Optional[str]
     def __init__(self,data) -> None:
         self.remainingSeconds=data["remainingSeconds"]
         self.totalSeconds=data["totalSeconds"]
         self.expiration=data["expiration"]
         self.shipSymbol=data["shipSymbol"]
+        self.expiredAt=data["expiredAt"] if "expiredAt" in data else None
 @dataclass
 class SurveyDeposit:
     symbol:str
