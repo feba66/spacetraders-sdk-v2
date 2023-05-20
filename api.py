@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from dataclasses import dataclass
 from enum import Enum
 from enums import Factions, WaypointType
-from objects import Agent, Contract, Cooldown, Faction, JumpGate, Market, MarketTransaction, Meta, Ship, ShipCargo, ShipFuel, ShipNav, Shipyard, Survey, System, Waypoint
+from objects import Agent, Chart, Contract, Cooldown, Faction, JumpGate, Market, MarketTransaction, Meta, Ship, ShipCargo, ShipFuel, ShipNav, Shipyard, Survey, System, Waypoint
 
 class Queue_Obj_Type(Enum):
     WAYPOINT=1,
@@ -648,7 +648,19 @@ class SpaceTraders:
         with self.db_lock:
             self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP,self.ships[shipSymbol]))
         return self.ships[shipSymbol]
-    # cargo
+    def Get_Cargo(self, shipSymbol):
+        path = f"/my/ships/{shipSymbol}/cargo"
+        r = self.my_req(path, "get")
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        cargo = ShipCargo(data)
+        if shipSymbol in self.ships:
+            self.ships[shipSymbol].cargo = cargo
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPCARGO,self.ships[shipSymbol]))
+        return cargo
     def Orbit(self, shipSymbol):
         path = f"/my/ships/{shipSymbol}/orbit"
         r = self.my_req(path, "post")
@@ -663,7 +675,20 @@ class SpaceTraders:
                 self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
         return self.ships[shipSymbol].nav
     # refine
-    # chart
+    def Chart(self, shipSymbol):  
+        path = f"/my/ships/{shipSymbol}/chart"
+        r = self.my_req(path, "post")
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        chart = Chart(data["chart"])
+        waypoint = Waypoint(data["waypoint"])
+        
+        self.waypoints[waypoint.symbol]=waypoint
+        with self.db_lock:
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.WAYPOINT,[waypoint]))
+        return (chart, waypoint)
     # cooldown
     def Dock(self, shipSymbol):
         path = f"/my/ships/{shipSymbol}/dock"

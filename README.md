@@ -33,10 +33,10 @@ Class          | HTTP request  | Description   | Implemented
 | *Fleet*      | **get** /my/ships | Retrieve all of your ships. | statekeeping & db
 | *Fleet*      | **post** /my/ships | Purchase a ship | statekeeping & db/2
 | *Fleet*      | **get** /my/ships/{shipSymbol} | Retrieve the details of your ship. |  statekeeping & db
-| *Fleet*      | **get** /my/ships/{shipSymbol}/cargo | Retrieve the cargo of your ship. |  
+| *Fleet*      | **get** /my/ships/{shipSymbol}/cargo | Retrieve the cargo of your ship. |  statekeeping & db
 | *Fleet*      | **post** /my/ships/{shipSymbol}/orbit | Orbit Ship | statekeeping & db
 | *Fleet*      | **post** /my/ships/{shipSymbol}/refine | Ship Refine | 
-| *Fleet*      | **post** /my/ships/{shipSymbol}/chart | Create Chart | 
+| *Fleet*      | **post** /my/ships/{shipSymbol}/chart | Create Chart | statekeeping & db
 | *Fleet*      | **get** /my/ships/{shipSymbol}/cooldown | Get Ship Cooldown | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/dock | Dock Ship | statekeeping & db
 | *Fleet*      | **post** /my/ships/{shipSymbol}/survey | Create Survey | 
