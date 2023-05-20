@@ -18,6 +18,7 @@ from objects import (
     Chart,
     Contract,
     Cooldown,
+    Extraction,
     Faction,
     JumpGate,
     Market,
@@ -951,7 +952,7 @@ class SpaceTraders:
                 )
         return self.ships[shipSymbol].nav
 
-    def Survey(self, shipSymbol, systemSymbol):
+    def Create_Survey(self, shipSymbol):
         path = f"/my/ships/{shipSymbol}/survey"
         r = self.my_req(path, "post")
         j = r.json()
@@ -967,7 +968,26 @@ class SpaceTraders:
             self.surveys[survey.signature]=survey # TODO add survey to database
         # self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol])) # TODO cooldown to db
         return (surveys,cooldown)
-    # extract
+    
+    def Extract(self, shipSymbol, survey:Survey = None):
+        path = f"/my/ships/{shipSymbol}/extract"
+        r = self.my_req(path, "post",json={"survey":survey.dict()})
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        extraction = Extraction(data["extraction"])
+        cooldown = Cooldown(data["cooldown"])
+        self.cooldowns[shipSymbol] = cooldown
+        cargo = ShipCargo(data["cargo"])
+        if shipSymbol in self.ships:
+            self.ships[shipSymbol].cargo = cargo
+            with self.db_lock:
+                self.db_queue.append(
+                    Queue_Obj(Queue_Obj_Type.SHIPCARGO, [self.ships[shipSymbol]])
+                )
+        # self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol])) # TODO cooldown to db
+        return (extraction,cargo,cooldown)
     # jettison
     def Jump(self, shipSymbol, systemSymbol):
         path = f"/my/ships/{shipSymbol}/jump"
@@ -1124,8 +1144,15 @@ if __name__ == "__main__":
     st.Init_Systems()
     st.Get_Ships()
     ship = list(st.ships.values())[0]
-    nav, fuel = st.Navigate(ship.symbol, "X1-UY52-72325C")
-    st.sleep_till(nav)
+
+    
+
+
+
+    # survey = Survey(json.loads('{"signature": "X1-UY52-72325C-B211DC","symbol": "X1-UY52-72325C","deposits": [{"symbol": "SILVER_ORE"},{"symbol": "ICE_WATER"},{"symbol": "ICE_WATER"}],"expiration": "2023-05-21T00:15:59.841Z","size": "MODERATE"}'))
+    # pprint(st.Extract(ship.symbol,survey))
+    # nav, fuel = st.Navigate(ship.symbol, "X1-UY52-72325C")
+    # st.sleep_till(nav)
     # st.Get_Shipyard("X1-UY52-72027D")
     # gate = st.Get_JumpGate("X1-AC10-73119Z")
     # pprint(gate.connectedSystems[0:10])

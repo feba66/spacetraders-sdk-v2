@@ -24,6 +24,7 @@ Class          | HTTP request  | Description   | Implemented
 |              | **get** /     | Status        | leaderboard db
 |              | **post** /register | Register New Agent | statekeeping
 | *Agents*     | **get** /my/agent | Fetch your agent's details. | statekeeping
+| *Agents*     | **get** /my/agent/events | last 60 seconds of events |
 | *Contracts*  | **get** /my/contracts | List all of your contracts. | statekeeping 
 | *Contracts*  | **get** /my/contracts/{contractId} | Get the details of a contract by ID. | statekeeping 
 | *Contracts*  | **post** /my/contracts/{contractId}/accept | Accept a contract. | statekeeping
@@ -41,7 +42,7 @@ Class          | HTTP request  | Description   | Implemented
 | *Fleet*      | **get** /my/ships/{shipSymbol}/cooldown | Get Ship Cooldown | statekeeping
 | *Fleet*      | **post** /my/ships/{shipSymbol}/dock | Dock Ship | statekeeping & db
 | *Fleet*      | **post** /my/ships/{shipSymbol}/survey | Create Survey | statekeeping
-| *Fleet*      | **post** /my/ships/{shipSymbol}/extract | Extract Resources | 
+| *Fleet*      | **post** /my/ships/{shipSymbol}/extract | Extract Resources | statekeeping & db/2
 | *Fleet*      | **post** /my/ships/{shipSymbol}/jettison | Jettison Cargo | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/jump | Jump Ship | statekeeping & db/2
 | *Fleet*      | **post** /my/ships/{shipSymbol}/navigate | Navigate Ship | statekeeping & db
