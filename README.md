@@ -26,8 +26,8 @@ Class          | HTTP request  | Description   | Implemented
 | *Contracts*  | **post** /my/contracts/{contractId}/fulfill | Fulfill a contract | 
 | *Contracts*  | **get** /my/contracts/{contractId} | Get the details of a contract by ID. | 
 | *Contracts*  | **get** /my/contracts | List all of your contracts. | 
-| *Factions*   | **get** /factions | List all discovered factions in the game. | 
-| *Factions*   | **get** /factions/{factionSymbol} | View the details of a faction. | 
+| *Factions*   | **get** /factions | List all discovered factions in the game. | statekeeping & db
+| *Factions*   | **get** /factions/{factionSymbol} | View the details of a faction. | statekeeping & db
 | *Fleet*      | **get** /my/ships | Retrieve all of your ships. | statekeeping & db
 | *Fleet*      | **post** /my/ships | Purchase a ship | statekeeping & half db
 | *Fleet*      | **get** /my/ships/{shipSymbol} | Retrieve the details of your ship. |  statekeeping & db

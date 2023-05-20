@@ -26,7 +26,8 @@ class Queue_Obj_Type(Enum):
     SHIPFUEL=9,
     SHIPCARGO=10,
     CONSUMPTION=6,
-    LEADERBOARD=7
+    LEADERBOARD=7,
+    FACTION=11
 @dataclass
 class Queue_Obj:
     type:Queue_Obj_Type
@@ -48,6 +49,7 @@ class SpaceTraders:
     ships: dict[str, Ship]
     contracts: dict[str, Contract]
     faction: Faction
+    factions: dict[str,Faction]
     systems: dict[str, System]
     markets: dict[str, Market]
 
@@ -124,6 +126,9 @@ class SpaceTraders:
         
         self.cur.execute("""CREATE TABLE IF NOT EXISTS CREDITLEADERBOARD (AGENTSYMBOL CHARACTER varying, CREDITS integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));""")
         self.cur.execute("""CREATE TABLE IF NOT EXISTS CHARTLEADERBOARD (AGENTSYMBOL CHARACTER varying, CHARTCOUNT integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));""")
+        
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS FACTIONS (SYMBOL CHARACTER varying NOT NULL, name CHARACTER varying, description CHARACTER varying, headquarters CHARACTER varying,  traits CHARACTER varying[], PRIMARY KEY (SYMBOL));""")
+        
         self.conn.commit()
         # endregion
 
@@ -278,6 +283,17 @@ class SpaceTraders:
                             ON CONFLICT (AGENTSYMBOL, TIMESTAMP) DO NOTHING""",
                                 list(temp))
                         self.conn.commit()
+                    elif q_obj.type == Queue_Obj_Type.FACTION:
+                        factions:list[Faction] = q_obj.data
+                        temp = []
+                        for f in factions:
+                            temp.extend([f.symbol,f.name,f.description,f.headquarters,[t.symbol.name for t in f.traits]])
+                        self.cur.execute(f"""INSERT INTO FACTIONS (SYMBOL, NAME, DESCRIPTION,HEADQUARTERS,TRAITS)
+                            VALUES {','.join([f'(%s, %s, %s, %s, %s)' for _ in range(int(len(temp)/5))])}
+                            ON CONFLICT (SYMBOL) DO NOTHING""",
+                                list(temp))
+                        self.conn.commit()
+                        
                 # TODO add the msg to db
                 # TODO add the queue-ing to all functions
             else:
@@ -492,6 +508,44 @@ class SpaceTraders:
             self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPYARD,yard))
         return yard
     #endregion
+    
+    # region Contracts
+
+    # endregion
+    # region Factions
+    def Get_Factions(self, page=1, limit=20):
+        path = f"/factions?page={page}&limit={limit}"
+        r = self.my_req(path, "get")
+        j = r.json()
+
+        meta = Meta(j["meta"]) if "meta" in j else None
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        factions=[]
+        for d in data:
+            faction = Faction(d)
+            factions.append(faction)
+            self.factions[faction.symbol]=faction
+        with self.db_lock:
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.Faction,factions))
+        return (factions,meta)
+    def Get_Faction(self, factionSymbol):
+        path = f"/factions/{factionSymbol}"
+        r = self.my_req(path, "get")
+        j = r.json()
+
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        
+        faction = Faction(data)
+        self.factions[faction.symbol]=faction
+        with self.db_lock:
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.Faction,[faction]))
+        return faction
+    
+    # endregion
 
     # region Fleet
     def Get_Ships(self, page=1, limit=20):
@@ -505,7 +559,7 @@ class SpaceTraders:
             ship = Ship(d)
             self.ships[ship.symbol] = ship
         with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP,[Ship(ship) for ship in data]))
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP,[Ship(ship) for ship in data]))
         return self.ships,Meta(j["meta"])
     def Purchase_Ship(self, shipType, waypointSymbol):
         path = "/my/ships"
