@@ -1,4 +1,3 @@
-
 from datetime import datetime
 from math import ceil
 import threading
@@ -14,24 +13,45 @@ from dotenv import load_dotenv
 from dataclasses import dataclass
 from enum import Enum
 from enums import Factions, WaypointType
-from objects import Agent, Chart, Contract, Cooldown, Faction, JumpGate, Market, MarketTransaction, Meta, Ship, ShipCargo, ShipFuel, ShipNav, Shipyard, Survey, System, Waypoint
+from objects import (
+    Agent,
+    Chart,
+    Contract,
+    Cooldown,
+    Faction,
+    JumpGate,
+    Market,
+    MarketTransaction,
+    Meta,
+    Ship,
+    ShipCargo,
+    ShipFuel,
+    ShipNav,
+    Shipyard,
+    Survey,
+    System,
+    Waypoint,
+)
+
 
 class Queue_Obj_Type(Enum):
-    WAYPOINT=1,
-    SYSTEM=2,
-    MARKET=3,
-    SHIPYARD=4,
-    SHIP=5,
-    SHIPNAV=8,
-    SHIPFUEL=9,
-    SHIPCARGO=10,
-    CONSUMPTION=6,
-    LEADERBOARD=7,
-    FACTION=11
+    WAYPOINT = 1
+    SYSTEM = 2
+    MARKET = 3
+    SHIPYARD = 4
+    SHIP = 5
+    CONSUMPTION = 6
+    LEADERBOARD = 7
+    SHIPNAV = 8
+    SHIPFUEL = 9
+    SHIPCARGO = 10
+    FACTION = 11
+
+
 @dataclass
 class Queue_Obj:
-    type:Queue_Obj_Type
-    data:object
+    type: Queue_Obj_Type
+    data: object
 
 
 class SpaceTraders:
@@ -40,16 +60,16 @@ class SpaceTraders:
 
     session: requests.Session
     logger: logging.Logger
-    
+
     t_db: threading.Thread
-    db_queue:list[Queue_Obj]
-    db_lock:threading.Lock
-    
+    db_queue: list[Queue_Obj]
+    db_lock: threading.Lock
+
     agent: Agent
     ships: dict[str, Ship]
     contracts: dict[str, Contract]
     faction: Faction
-    factions: dict[str,Faction]
+    factions: dict[str, Faction]
     systems: dict[str, System]
     markets: dict[str, Market]
 
@@ -76,10 +96,14 @@ class SpaceTraders:
         self.db_queue = []
         # endregion
         # region logging
-        self.logger = logging.getLogger("SpaceTraders-"+str(threading.current_thread().native_id))
+        self.logger = logging.getLogger(
+            "SpaceTraders-" + str(threading.current_thread().native_id)
+        )
         self.logger.setLevel(logging.DEBUG)
 
-        formatter = logging.Formatter('%(asctime)s - %(thread)d - %(name)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter(
+            "%(asctime)s - %(thread)d - %(name)s - %(levelname)s - %(message)s"
+        )
 
         ch = logging.StreamHandler()
         ch.setLevel(logging.INFO)
@@ -95,254 +119,412 @@ class SpaceTraders:
         # endregion
         # region db
         self.db_lock = threading.Lock()
-        self.db_queue=[]
-        self.t_db = threading.Thread(target=self.db_thread,name="DB_Thread")
+        self.db_queue = []
+        self.t_db = threading.Thread(target=self.db_thread, name="DB_Thread")
         self.t_db.daemon = True
         self.t_db.start()
         # endregion
-    
+
     def db_thread(self):
         user = os.getenv("USER")
         db = os.getenv("DB")
         ip = os.getenv("IP")
         port = os.getenv("PORT")
 
-        self.conn = psycopg2.connect(dbname=db,user=user,password=os.getenv("PASSWORD"),host=ip,port=port)
+        self.conn = psycopg2.connect(
+            dbname=db, user=user, password=os.getenv("PASSWORD"), host=ip, port=port
+        )
         self.cur = self.conn.cursor()
 
-        self.cur.execute("CREATE TABLE IF NOT EXISTS waypoints (systemSymbol varchar, symbol varchar PRIMARY KEY, type varchar, x integer,y integer,orbitals varchar[],traits varchar[],chart varchar,faction varchar);")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS systems (symbol varchar PRIMARY KEY, type varchar, x integer, y integer);")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS markets (symbol varchar, good varchar, type varchar, PRIMARY KEY (symbol, good, type));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS shipyards (symbol varchar, shiptype varchar, PRIMARY KEY (symbol, shiptype));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS prices (waypointsymbol varchar, symbol varchar, supply varchar, purchase integer, sell integer,tradevolume integer,timestamp varchar, PRIMARY KEY (waypointsymbol, symbol,timestamp));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS transactions (WAYPOINTSYMBOL varchar, SHIPSYMBOL varchar, TRADESYMBOL varchar, TYPE varchar, UNITS integer, PRICEPERUNIT integer, TOTALPRICE integer, timestamp varchar, PRIMARY KEY (WAYPOINTSYMBOL,TRADESYMBOL,SHIPSYMBOL, timestamp));")
-        
-        # region reworked tables 
-        self.cur.execute("""CREATE TABLE IF NOT EXISTS SHIPS (SYMBOL CHARACTER varying NOT NULL, faction CHARACTER varying, ROLE CHARACTER varying, FRAME CHARACTER varying,  ENGINE CHARACTER varying,  SPEED CHARACTER varying,  MODULES CHARACTER varying[],  MOUNTS CHARACTER varying[],  cargo_capacity integer, PRIMARY KEY (SYMBOL));""")
-        self.cur.execute("""CREATE TABLE IF NOT EXISTS SHIPNAVS(SYMBOL CHARACTER varying NOT NULL, WAYPOINTSYMBOL CHARACTER varying, DEPARTURE CHARACTER varying, DESTINATION CHARACTER varying, ARRIVAL CHARACTER varying, DEPARTURETIME CHARACTER varying, STATUS CHARACTER varying, FLIGHTMODE CHARACTER varying, PRIMARY KEY (SYMBOL));""")
-        self.cur.execute("""CREATE TABLE IF NOT EXISTS SHIPCARGOS (SYMBOL CHARACTER varying, GOOD CHARACTER varying, UNITS integer, PRIMARY KEY (SYMBOL, GOOD));""")
-        self.cur.execute("""CREATE TABLE IF NOT EXISTS SHIPFUEL (SYMBOL CHARACTER varying, FUEL integer, CAPACITY integer, PRIMARY KEY (SYMBOL));""")
-        self.cur.execute("""CREATE TABLE IF NOT EXISTS SHIPCONSUMTION (SYMBOL CHARACTER varying, AMOUNT integer, DEPARTEDFROM CHARACTER varying, DESTINATION CHARACTER varying, FLIGHTMODE CHARACTER varying, FLIGHTTIME integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (SYMBOL, TIMESTAMP));""")
-        
-        self.cur.execute("""CREATE TABLE IF NOT EXISTS CREDITLEADERBOARD (AGENTSYMBOL CHARACTER varying, CREDITS integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));""")
-        self.cur.execute("""CREATE TABLE IF NOT EXISTS CHARTLEADERBOARD (AGENTSYMBOL CHARACTER varying, CHARTCOUNT integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));""")
-        
-        self.cur.execute("""CREATE TABLE IF NOT EXISTS FACTIONS (SYMBOL CHARACTER varying NOT NULL, name CHARACTER varying, description CHARACTER varying, headquarters CHARACTER varying,  traits CHARACTER varying[], PRIMARY KEY (SYMBOL));""")
-        
+        self.cur.execute(
+            "CREATE TABLE IF NOT EXISTS waypoints (systemSymbol varchar, symbol varchar PRIMARY KEY, type varchar, x integer,y integer,orbitals varchar[],traits varchar[],chart varchar,faction varchar);"
+        )
+        self.cur.execute(
+            "CREATE TABLE IF NOT EXISTS systems (symbol varchar PRIMARY KEY, type varchar, x integer, y integer);"
+        )
+        self.cur.execute(
+            "CREATE TABLE IF NOT EXISTS markets (symbol varchar, good varchar, type varchar, PRIMARY KEY (symbol, good, type));"
+        )
+        self.cur.execute(
+            "CREATE TABLE IF NOT EXISTS shipyards (symbol varchar, shiptype varchar, PRIMARY KEY (symbol, shiptype));"
+        )
+        self.cur.execute(
+            "CREATE TABLE IF NOT EXISTS prices (waypointsymbol varchar, symbol varchar, supply varchar, purchase integer, sell integer,tradevolume integer,timestamp varchar, PRIMARY KEY (waypointsymbol, symbol,timestamp));"
+        )
+        self.cur.execute(
+            "CREATE TABLE IF NOT EXISTS transactions (WAYPOINTSYMBOL varchar, SHIPSYMBOL varchar, TRADESYMBOL varchar, TYPE varchar, UNITS integer, PRICEPERUNIT integer, TOTALPRICE integer, timestamp varchar, PRIMARY KEY (WAYPOINTSYMBOL,TRADESYMBOL,SHIPSYMBOL, timestamp));"
+        )
+
+        # region reworked tables
+        self.cur.execute(
+            """CREATE TABLE IF NOT EXISTS SHIPS (SYMBOL CHARACTER varying NOT NULL, faction CHARACTER varying, ROLE CHARACTER varying, FRAME CHARACTER varying,  ENGINE CHARACTER varying,  SPEED CHARACTER varying,  MODULES CHARACTER varying[],  MOUNTS CHARACTER varying[],  cargo_capacity integer, PRIMARY KEY (SYMBOL));"""
+        )
+        self.cur.execute(
+            """CREATE TABLE IF NOT EXISTS SHIPNAVS(SYMBOL CHARACTER varying NOT NULL, WAYPOINTSYMBOL CHARACTER varying, DEPARTURE CHARACTER varying, DESTINATION CHARACTER varying, ARRIVAL CHARACTER varying, DEPARTURETIME CHARACTER varying, STATUS CHARACTER varying, FLIGHTMODE CHARACTER varying, PRIMARY KEY (SYMBOL));"""
+        )
+        self.cur.execute(
+            """CREATE TABLE IF NOT EXISTS SHIPCARGOS (SYMBOL CHARACTER varying, GOOD CHARACTER varying, UNITS integer, PRIMARY KEY (SYMBOL, GOOD));"""
+        )
+        self.cur.execute(
+            """CREATE TABLE IF NOT EXISTS SHIPFUEL (SYMBOL CHARACTER varying, FUEL integer, CAPACITY integer, PRIMARY KEY (SYMBOL));"""
+        )
+        self.cur.execute(
+            """CREATE TABLE IF NOT EXISTS SHIPCONSUMTION (SYMBOL CHARACTER varying, AMOUNT integer, DEPARTEDFROM CHARACTER varying, DESTINATION CHARACTER varying, FLIGHTMODE CHARACTER varying, FLIGHTTIME integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (SYMBOL, TIMESTAMP));"""
+        )
+
+        self.cur.execute(
+            """CREATE TABLE IF NOT EXISTS CREDITLEADERBOARD (AGENTSYMBOL CHARACTER varying, CREDITS integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));"""
+        )
+        self.cur.execute(
+            """CREATE TABLE IF NOT EXISTS CHARTLEADERBOARD (AGENTSYMBOL CHARACTER varying, CHARTCOUNT integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));"""
+        )
+
+        self.cur.execute(
+            """CREATE TABLE IF NOT EXISTS FACTIONS (SYMBOL CHARACTER varying NOT NULL, name CHARACTER varying, description CHARACTER varying, headquarters CHARACTER varying,  traits CHARACTER varying[], PRIMARY KEY (SYMBOL));"""
+        )
+
         self.conn.commit()
         # endregion
 
         while True:
-            tmp:list[Queue_Obj] = []
-            if len(self.db_queue)>0:
+            tmp: list[Queue_Obj] = []
+            if len(self.db_queue) > 0:
                 with self.db_lock:
-                    for _ in range(min(len(self.db_queue),5)):
+                    for _ in range(min(len(self.db_queue), 5)):
                         tmp.append(self.db_queue.pop(0))
-                while len(tmp)>0:
+                while len(tmp) > 0:
                     q_obj = tmp.pop(0)
                     if q_obj.type == Queue_Obj_Type.WAYPOINT:
-                        wps:list[Waypoint] = q_obj.data
+                        wps: list[Waypoint] = q_obj.data
                         temp = []
                         for wp in wps:
-                            temp.extend([wp.systemSymbol, wp.symbol,wp.type.name,wp.x,wp.y,[x.symbol for x in wp.orbitals],[x.symbol.name for x in wp.traits],wp.chart.submittedBy if wp.chart else "UNCHARTED",wp.faction.symbol if wp.faction else " "])
-                        self.cur.execute(f"""INSERT INTO waypoints (systemSymbol, symbol, type, x, y, orbitals, traits, chart,faction)
+                            temp.extend(
+                                [
+                                    wp.systemSymbol,
+                                    wp.symbol,
+                                    wp.type.name,
+                                    wp.x,
+                                    wp.y,
+                                    [x.symbol for x in wp.orbitals],
+                                    [x.symbol.name for x in wp.traits],
+                                    wp.chart.submittedBy if wp.chart else "UNCHARTED",
+                                    wp.faction.symbol if wp.faction else " ",
+                                ]
+                            )
+                        self.cur.execute(
+                            f"""INSERT INTO waypoints (systemSymbol, symbol, type, x, y, orbitals, traits, chart,faction)
                             VALUES  {','.join([f'(%s, %s, %s, %s, %s, %s, %s, %s, %s)' for _ in range(int(len(temp)/9))])}
                             ON CONFLICT (symbol)
-                            DO UPDATE SET traits = excluded.traits, chart = excluded.chart,faction = excluded.faction """,temp)
+                            DO UPDATE SET traits = excluded.traits, chart = excluded.chart,faction = excluded.faction """,
+                            temp,
+                        )
                         self.conn.commit()
                     elif q_obj.type == Queue_Obj_Type.SYSTEM:
-                        systems:list[System] = q_obj.data
-                        for i in range(ceil(len(systems)/1000)):
+                        systems: list[System] = q_obj.data
+                        for i in range(ceil(len(systems) / 1000)):
                             temp = []
-                            for sys in systems[i*1000:min((i+1)*1000,len(systems))]:
-                                temp.extend([sys.symbol,sys.type.name,sys.x,sys.y])
-                            self.cur.execute(f"""INSERT INTO systems (symbol, type, x,y)
+                            for sys in systems[
+                                i * 1000 : min((i + 1) * 1000, len(systems))
+                            ]:
+                                temp.extend([sys.symbol, sys.type.name, sys.x, sys.y])
+                            self.cur.execute(
+                                f"""INSERT INTO systems (symbol, type, x,y)
                             VALUES {','.join([f'(%s, %s, %s, %s)' for _ in range(int(len(temp)/4))])} 
                             ON CONFLICT (symbol) DO NOTHING""",
-                                list(temp))
+                                list(temp),
+                            )
                         self.conn.commit()
                     elif q_obj.type == Queue_Obj_Type.MARKET:
-                        m:Market = q_obj.data
+                        m: Market = q_obj.data
                         temp = []
                         for x in m.imports:
-                            temp.extend([m.symbol,x.symbol.name,"IMPORT"])
+                            temp.extend([m.symbol, x.symbol.name, "IMPORT"])
                         for x in m.exports:
-                            temp.extend([m.symbol,x.symbol.name,"EXPORT"])
+                            temp.extend([m.symbol, x.symbol.name, "EXPORT"])
                         for x in m.exchange:
-                            temp.extend([m.symbol,x.symbol.name,"EXCHANGE"])
-                        if len(temp)>0:
-                            self.cur.execute(f"""INSERT INTO markets (symbol, good, type)
+                            temp.extend([m.symbol, x.symbol.name, "EXCHANGE"])
+                        if len(temp) > 0:
+                            self.cur.execute(
+                                f"""INSERT INTO markets (symbol, good, type)
                             VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])} 
                             ON CONFLICT (symbol, good, type) DO NOTHING""",
-                                list(temp))
+                                list(temp),
+                            )
                         if m.tradeGoods:
                             temp = []
                             for x in m.tradeGoods:
-                                temp.extend([m.symbol,x.symbol,x.supply.name,x.purchasePrice,x.sellPrice,x.tradeVolume,datetime.strftime(datetime.utcnow(),self.FORMAT_STR)])
-                            self.cur.execute(f"""INSERT INTO PRICES (WAYPOINTSYMBOL,symbol,SUPPLY,PURCHASE,SELL,TRADEVOLUME,TIMESTAMP)
+                                temp.extend(
+                                    [
+                                        m.symbol,
+                                        x.symbol,
+                                        x.supply.name,
+                                        x.purchasePrice,
+                                        x.sellPrice,
+                                        x.tradeVolume,
+                                        datetime.strftime(
+                                            datetime.utcnow(), self.FORMAT_STR
+                                        ),
+                                    ]
+                                )
+                            self.cur.execute(
+                                f"""INSERT INTO PRICES (WAYPOINTSYMBOL,symbol,SUPPLY,PURCHASE,SELL,TRADEVOLUME,TIMESTAMP)
                             VALUES {','.join([f'(%s, %s, %s, %s, %s, %s, %s)' for _ in range(int(len(temp)/7))])} 
                             ON CONFLICT (WAYPOINTSYMBOL, symbol, TIMESTAMP) DO UPDATE 
                             SET SUPPLY = excluded.SUPPLY,
                                 PURCHASE = excluded.PURCHASE,
                                 SELL = excluded.SELL,
                                 TRADEVOLUME = excluded.TRADEVOLUME""",
-                                list(temp))
+                                list(temp),
+                            )
                         self.conn.commit()
                     elif q_obj.type == Queue_Obj_Type.SHIPYARD:
-                        yard:list[Shipyard] = q_obj.data
+                        yard: list[Shipyard] = q_obj.data
                         temp = []
                         for sy in [yard]:
                             for shiptype in sy.shipTypes:
-                                temp.extend([sy.symbol,shiptype.name])
+                                temp.extend([sy.symbol, shiptype.name])
                             # temp.extend([wp.systemSymbol, wp.symbol,wp.type.name,wp.x,wp.y,[x.symbol for x in wp.orbitals],[x.symbol.name for x in wp.traits],wp.chart.submittedBy if wp.chart else "UNCHARTED",wp.faction.symbol if wp.faction else " "])
-                        self.cur.execute(f"""INSERT INTO shipyards (symbol,shiptype)
+                        self.cur.execute(
+                            f"""INSERT INTO shipyards (symbol,shiptype)
                             VALUES  {','.join([f'(%s, %s)' for _ in range(int(len(temp)/2))])}
                             ON CONFLICT (symbol,shiptype) 
-                            DO NOTHING""",temp)
+                            DO NOTHING""",
+                            temp,
+                        )
                         self.conn.commit()
                     elif q_obj.type == Queue_Obj_Type.SHIP:
-                        ships:list[Ship] = q_obj.data
+                        ships: list[Ship] = q_obj.data
                         temp = []
                         for s in ships:
-                            temp.extend([s.symbol,s.registration.factionSymbol,s.registration.role,s.frame.symbol.name,s.engine.symbol.name,s.engine.speed,[x.symbol.name for x in s.modules],[x.symbol.name for x in s.mounts],s.cargo.capacity])
-                        self.cur.execute(f"""INSERT INTO SHIPS (SYMBOL, FACTION, ROLE, FRAME, ENGINE, SPEED, MODULES, MOUNTS, CARGO_CAPACITY)
+                            temp.extend(
+                                [
+                                    s.symbol,
+                                    s.registration.factionSymbol,
+                                    s.registration.role,
+                                    s.frame.symbol.name,
+                                    s.engine.symbol.name,
+                                    s.engine.speed,
+                                    [x.symbol.name for x in s.modules],
+                                    [x.symbol.name for x in s.mounts],
+                                    s.cargo.capacity,
+                                ]
+                            )
+                        self.cur.execute(
+                            f"""INSERT INTO SHIPS (SYMBOL, FACTION, ROLE, FRAME, ENGINE, SPEED, MODULES, MOUNTS, CARGO_CAPACITY)
                         VALUES {','.join([f'(%s, %s, %s, %s,%s, %s, %s, %s,%s)' for _ in range(int(len(temp)/9))])} 
                         ON CONFLICT (SYMBOL) DO NOTHING""",
-                            list(temp))
+                            list(temp),
+                        )
                         temp = []
                         for s in ships:
-                            temp.extend([s.symbol,s.fuel.current,s.fuel.capacity])
-                        self.cur.execute(f"""INSERT INTO SHIPFUEL (SYMBOL, FUEL, CAPACITY)
+                            temp.extend([s.symbol, s.fuel.current, s.fuel.capacity])
+                        self.cur.execute(
+                            f"""INSERT INTO SHIPFUEL (SYMBOL, FUEL, CAPACITY)
                         VALUES {','.join([f'(%s,%s,%s)' for _ in range(int(len(temp)/3))])}
                         ON CONFLICT (SYMBOL) DO UPDATE SET FUEL=excluded.FUEL""",
-                            list(temp))
+                            list(temp),
+                        )
                         temp = []
                         for s in ships:
                             for c in s.cargo.inventory:
-                                temp.extend([s.symbol,c.symbol,c.units])
-                        self.cur.execute(f"""INSERT INTO SHIPCARGOS (SYMBOL, GOOD, UNITS)
+                                temp.extend([s.symbol, c.symbol, c.units])
+                        self.cur.execute(
+                            f"""INSERT INTO SHIPCARGOS (SYMBOL, GOOD, UNITS)
                             VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])}
                             ON CONFLICT (SYMBOL, GOOD) DO UPDATE SET UNITS = excluded.UNITS""",
-                                list(temp))
+                            list(temp),
+                        )
                         temp = []
                         for s in ships:
-                            temp.extend([s.symbol,s.nav.waypointSymbol,s.nav.route.departure.symbol,s.nav.route.destination.symbol,s.nav.route.arrival,s.nav.route.departureTime,s.nav.status.name,s.nav.flightMode.name])
-                        self.cur.execute(f"""INSERT INTO SHIPNAVS (SYMBOL, WAYPOINTSYMBOL, DEPARTURE, DESTINATION, ARRIVAL, DEPARTURETIME, STATUS, FLIGHTMODE)
+                            temp.extend(
+                                [
+                                    s.symbol,
+                                    s.nav.waypointSymbol,
+                                    s.nav.route.departure.symbol,
+                                    s.nav.route.destination.symbol,
+                                    s.nav.route.arrival,
+                                    s.nav.route.departureTime,
+                                    s.nav.status.name,
+                                    s.nav.flightMode.name,
+                                ]
+                            )
+                        self.cur.execute(
+                            f"""INSERT INTO SHIPNAVS (SYMBOL, WAYPOINTSYMBOL, DEPARTURE, DESTINATION, ARRIVAL, DEPARTURETIME, STATUS, FLIGHTMODE)
                             VALUES {','.join([f'(%s, %s, %s,%s, %s, %s,%s, %s)' for _ in range(int(len(temp)/8))])}
                             ON CONFLICT (SYMBOL) DO UPDATE SET WAYPOINTSYMBOL = excluded.WAYPOINTSYMBOL, DEPARTURE = excluded.DEPARTURE, DESTINATION = excluded.DESTINATION,ARRIVAL = excluded.ARRIVAL,DEPARTURETIME = excluded.DEPARTURETIME,STATUS = excluded.STATUS,FLIGHTMODE = excluded.FLIGHTMODE""",
-                                list(temp))
-                        
+                            list(temp),
+                        )
+
                         self.conn.commit()
                     elif q_obj.type == Queue_Obj_Type.SHIPCARGO:
-                        ships:list[Ship] = q_obj.data
+                        ships: list[Ship] = q_obj.data
                         temp = []
                         for s in ships:
                             for c in s.cargo.inventory:
-                                temp.extend([s.symbol,c.symbol,c.units])
-                        self.cur.execute(f"""INSERT INTO SHIPCARGOS (SYMBOL, GOOD, UNITS)
+                                temp.extend([s.symbol, c.symbol, c.units])
+                        self.cur.execute(
+                            f"""INSERT INTO SHIPCARGOS (SYMBOL, GOOD, UNITS)
                             VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])}
                             ON CONFLICT (SYMBOL, GOOD) DO UPDATE SET UNITS = excluded.UNITS""",
-                                list(temp))
+                            list(temp),
+                        )
                     elif q_obj.type == Queue_Obj_Type.SHIPNAV:
-                        ship:Ship = q_obj.data
+                        ship: Ship = q_obj.data
                         temp = []
                         for s in [ship]:
-                            temp.extend([s.symbol,s.nav.waypointSymbol,s.nav.route.departure.symbol,s.nav.route.destination.symbol,s.nav.route.arrival,s.nav.route.departureTime,s.nav.status.name,s.nav.flightMode.name])
-                        self.cur.execute(f"""INSERT INTO SHIPNAVS (SYMBOL, WAYPOINTSYMBOL, DEPARTURE, DESTINATION, ARRIVAL, DEPARTURETIME, STATUS, FLIGHTMODE)
+                            temp.extend(
+                                [
+                                    s.symbol,
+                                    s.nav.waypointSymbol,
+                                    s.nav.route.departure.symbol,
+                                    s.nav.route.destination.symbol,
+                                    s.nav.route.arrival,
+                                    s.nav.route.departureTime,
+                                    s.nav.status.name,
+                                    s.nav.flightMode.name,
+                                ]
+                            )
+                        self.cur.execute(
+                            f"""INSERT INTO SHIPNAVS (SYMBOL, WAYPOINTSYMBOL, DEPARTURE, DESTINATION, ARRIVAL, DEPARTURETIME, STATUS, FLIGHTMODE)
                             VALUES {','.join([f'(%s, %s, %s,%s, %s, %s,%s, %s)' for _ in range(int(len(temp)/8))])}
                             ON CONFLICT (SYMBOL) DO UPDATE SET WAYPOINTSYMBOL = excluded.WAYPOINTSYMBOL, DEPARTURE = excluded.DEPARTURE, DESTINATION = excluded.DESTINATION,ARRIVAL = excluded.ARRIVAL,DEPARTURETIME = excluded.DEPARTURETIME,STATUS = excluded.STATUS,FLIGHTMODE = excluded.FLIGHTMODE""",
-                                list(temp))
-                        
+                            list(temp),
+                        )
+
                         self.conn.commit()
                     elif q_obj.type == Queue_Obj_Type.SHIPFUEL:
-                        ship:Ship = q_obj.data
+                        ship: Ship = q_obj.data
                         temp = []
                         for s in [ship]:
-                            temp.extend([s.symbol,s.fuel.current,s.fuel.capacity])
-                        self.cur.execute(f"""INSERT INTO SHIPFUEL (SYMBOL, FUEL, CAPACITY)
+                            temp.extend([s.symbol, s.fuel.current, s.fuel.capacity])
+                        self.cur.execute(
+                            f"""INSERT INTO SHIPFUEL (SYMBOL, FUEL, CAPACITY)
                         VALUES {','.join([f'(%s,%s,%s)' for _ in range(int(len(temp)/3))])}
                         ON CONFLICT (SYMBOL) DO UPDATE SET FUEL=excluded.FUEL""",
-                            list(temp))
+                            list(temp),
+                        )
                         self.conn.commit()
                     elif q_obj.type == Queue_Obj_Type.CONSUMPTION:
                         pass
                     elif q_obj.type == Queue_Obj_Type.LEADERBOARD:
-                        lb:dict = q_obj.data
+                        lb: dict = q_obj.data
                         temp = []
                         for c in lb["mostCredits"]:
-                            temp.extend([c["agentSymbol"],c["credits"],datetime.strftime(datetime.utcnow(),self.FORMAT_STR)])
-                        self.cur.execute(f"""INSERT INTO CREDITLEADERBOARD (AGENTSYMBOL, CREDITS, TIMESTAMP)
+                            temp.extend(
+                                [
+                                    c["agentSymbol"],
+                                    c["credits"],
+                                    datetime.strftime(
+                                        datetime.utcnow(), self.FORMAT_STR
+                                    ),
+                                ]
+                            )
+                        self.cur.execute(
+                            f"""INSERT INTO CREDITLEADERBOARD (AGENTSYMBOL, CREDITS, TIMESTAMP)
                             VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])}
                             ON CONFLICT (AGENTSYMBOL, TIMESTAMP) DO NOTHING""",
-                                list(temp))
-                        temp = []
-                        for c in lb["mostSubmittedCharts"]:
-                            temp.extend([c["agentSymbol"],c["chartCount"],datetime.strftime(datetime.utcnow(),self.FORMAT_STR)])
-                        self.cur.execute(f"""INSERT INTO CHARTLEADERBOARD (AGENTSYMBOL, CHARTCOUNT, TIMESTAMP)
-                            VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])}
-                            ON CONFLICT (AGENTSYMBOL, TIMESTAMP) DO NOTHING""",
-                                list(temp))
+                            list(temp),
+                        )
+                        if len(lb["mostSubmittedCharts"]) > 0:
+                            temp = []
+                            for c in lb["mostSubmittedCharts"]:
+                                temp.extend(
+                                    [
+                                        c["agentSymbol"],
+                                        c["chartCount"],
+                                        datetime.strftime(
+                                            datetime.utcnow(), self.FORMAT_STR
+                                        ),
+                                    ]
+                                )
+                            self.cur.execute(
+                                f"""INSERT INTO CHARTLEADERBOARD (AGENTSYMBOL, CHARTCOUNT, TIMESTAMP)
+                                VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])}
+                                ON CONFLICT (AGENTSYMBOL, TIMESTAMP) DO NOTHING""",
+                                list(temp),
+                            )
                         self.conn.commit()
                     elif q_obj.type == Queue_Obj_Type.FACTION:
-                        factions:list[Faction] = q_obj.data
+                        factions: list[Faction] = q_obj.data
                         temp = []
                         for f in factions:
-                            temp.extend([f.symbol,f.name,f.description,f.headquarters,[t.symbol.name for t in f.traits]])
-                        self.cur.execute(f"""INSERT INTO FACTIONS (SYMBOL, NAME, DESCRIPTION,HEADQUARTERS,TRAITS)
+                            temp.extend(
+                                [
+                                    f.symbol,
+                                    f.name,
+                                    f.description,
+                                    f.headquarters,
+                                    [t.symbol.name for t in f.traits],
+                                ]
+                            )
+                        self.cur.execute(
+                            f"""INSERT INTO FACTIONS (SYMBOL, NAME, DESCRIPTION,HEADQUARTERS,TRAITS)
                             VALUES {','.join([f'(%s, %s, %s, %s, %s)' for _ in range(int(len(temp)/5))])}
                             ON CONFLICT (SYMBOL) DO NOTHING""",
-                                list(temp))
+                            list(temp),
+                        )
                         self.conn.commit()
-                        
+
                 # TODO add the msg to db
                 # TODO add the queue-ing to all functions
             else:
-                time.sleep(.01)
-    
+                time.sleep(0.01)
+
     @ratelimit.sleep_and_retry
     @ratelimit.limits(calls=3, period=1)
     def my_req(self, url, method, data=None, json=None):
-        r = self.session.request(method, self.server+url, data=data, json=json)
+        r = self.session.request(method, self.server + url, data=data, json=json)
 
         self.logger.info(f"{r.request.method} {r.request.url} {r.status_code}")
-        self.logger.debug(f"{r.request.method} {r.request.url} {r.status_code} {r.text}")
+        self.logger.debug(
+            f"{r.request.method} {r.request.url} {r.status_code} {r.text}"
+        )
 
         while r.status_code == 429:
             time.sleep(0.5)
-            
-            r = self.session.request(method, self.server+url, data=data, json=json)
-            
+
+            r = self.session.request(method, self.server + url, data=data, json=json)
+
             self.logger.info(f"{r.request.method} {r.request.url} {r.status_code}")
-            self.logger.debug(f"{r.request.method} {r.request.url} {r.status_code} {r.text}")
-            
+            self.logger.debug(
+                f"{r.request.method} {r.request.url} {r.status_code} {r.text}"
+            )
+
         # TODO add monitoring, measure time of the requests and send them to the db aswell
-        
+
         return r
-    
-    
+
     def Login(self, token):
-        self.session.headers.update({"Authorization": "Bearer "+token})
+        self.session.headers.update({"Authorization": "Bearer " + token})
 
     # region helpers
-    def parse_time(self,tstr):
-        return datetime.strptime(tstr,self.FORMAT_STR)
-    def get_time_diff(self,big,small):
-        return (big-small).total_seconds()
-    def time_till(self,future):
+    def parse_time(self, tstr):
+        return datetime.strptime(tstr, self.FORMAT_STR)
+
+    def get_time_diff(self, big, small):
+        return (big - small).total_seconds()
+
+    def time_till(self, future):
         return self.get_time_diff(self.parse_time(future), datetime.utcnow())
-    def sleep_till(self,nav:ShipNav):
-        t = max(0,self.time_till(nav.route.arrival))
+
+    def sleep_till(self, nav: ShipNav):
+        t = max(0, self.time_till(nav.route.arrival))
         self.logger.info(f"Sleep for {t}")
         time.sleep(t)
+
     # endregion
 
     # region endpoints
-    def Register(self, symbol: str, faction: Factions,email:str=None, login=True):
+    def Register(self, symbol: str, faction: Factions, email: str = None, login=True):
         path = "/register"
         if 3 > len(symbol) > 14:
             raise ValueError("symbol must be 3-14 characters long")
         if email != None:
-            r = self.my_req(path, "post", data={"symbol": symbol, "faction": faction, "email": email})
+            r = self.my_req(
+                path,
+                "post",
+                data={"symbol": symbol, "faction": faction, "email": email},
+            )
         else:
             r = self.my_req(path, "post", data={"symbol": symbol, "faction": faction})
 
@@ -360,15 +542,19 @@ class SpaceTraders:
         if login:
             self.Login(token)
         return token
+
     def Status(self):
-        path ="/"
+        path = "/"
         r = self.my_req(path, "get")
         try:
             with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.LEADERBOARD,r.json()["leaderboards"]))
+                self.db_queue.append(
+                    Queue_Obj(Queue_Obj_Type.LEADERBOARD, r.json()["leaderboards"])
+                )
         except:
             pass
         return r
+
     def Get_Agent(self):
         path = "/my/agent"
         r = self.my_req(path, "get")
@@ -378,11 +564,11 @@ class SpaceTraders:
             return  # TODO raise error
         self.agent = Agent(data)
         return self.agent
-    
-    #region Systems
+
+    # region Systems
     def Get_Systems(self, page=1, limit=20):
         path = f"/systems"
-        r = self.my_req(path+f"?page={page}&limit={limit}", "get")
+        r = self.my_req(path + f"?page={page}&limit={limit}", "get")
         j = r.json()
         data = j["data"] if "data" in j else None
         if data == None:
@@ -393,8 +579,9 @@ class SpaceTraders:
             systems.append(system)
             self.systems[system.symbol] = system
         with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM,systems))
-        return systems,Meta(j["meta"])
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM, systems))
+        return systems, Meta(j["meta"])
+
     def Init_Systems(self):
         path = "/systems.json"
 
@@ -404,16 +591,21 @@ class SpaceTraders:
                 f.write(r.text)
             j = r.json()
             with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM,[System(system) for system in j]))
+                self.db_queue.append(
+                    Queue_Obj(Queue_Obj_Type.SYSTEM, [System(system) for system in j])
+                )
         else:
             with open("systems.json", "r") as f:
                 j = json.load(f)
             with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM,[System(system) for system in j]))
+                self.db_queue.append(
+                    Queue_Obj(Queue_Obj_Type.SYSTEM, [System(system) for system in j])
+                )
         for s in j:
             system = System(s)
             self.systems[system.symbol] = system
         return self.systems
+
     def Get_System(self, systemSymbol):
         path = f"/systems/{systemSymbol}"
         r = self.my_req(path, "get")
@@ -424,11 +616,12 @@ class SpaceTraders:
         system = System(data)
         self.systems[systemSymbol] = system
         with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM,[system]))
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM, [system]))
         return system
+
     def Get_Waypoints(self, systemSymbol, page=1, limit=20):
         path = f"/systems/{systemSymbol}/waypoints"
-        r = self.my_req(path+f"?page={page}&limit={limit}", "get")
+        r = self.my_req(path + f"?page={page}&limit={limit}", "get")
         j = r.json()
 
         meta = Meta(j["meta"]) if "meta" in j else None
@@ -436,17 +629,20 @@ class SpaceTraders:
         if data == None:
             return  # TODO raise error
         way = []
-        way:list[str]
+        way: list[str]
         for d in data:
             w = Waypoint(d)
             self.waypoints[w.symbol] = w
             way.append(w.symbol)
-        if len(way)>0:
+        if len(way) > 0:
             with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.WAYPOINT,[self.waypoints[w] for w in way]))
+                self.db_queue.append(
+                    Queue_Obj(Queue_Obj_Type.WAYPOINT, [self.waypoints[w] for w in way])
+                )
         return (way, meta)
+
     def Get_Waypoint(self, waypointSymbol):
-        systemSymbol = waypointSymbol[0:waypointSymbol.find("-", 4)]
+        systemSymbol = waypointSymbol[0 : waypointSymbol.find("-", 4)]
         path = f"/systems/{systemSymbol}/waypoints/{waypointSymbol}"
         r = self.my_req(path, "get")
         j = r.json()
@@ -456,10 +652,11 @@ class SpaceTraders:
         w = Waypoint(data)
         self.waypoints[w.symbol] = w
         with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.WAYPOINT,[w]))
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.WAYPOINT, [w]))
         return w
+
     def Get_Market(self, waypointSymbol):
-        systemSymbol = waypointSymbol[0:waypointSymbol.find("-", 4)]
+        systemSymbol = waypointSymbol[0 : waypointSymbol.find("-", 4)]
         path = f"/systems/{systemSymbol}/waypoints/{waypointSymbol}/market"
         r = self.my_req(path, "get")
         j = r.json()
@@ -469,10 +666,11 @@ class SpaceTraders:
         market = Market(data)
         self.markets[waypointSymbol] = market
         with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.MARKET,market))
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.MARKET, market))
         return data
+
     def Get_Shipyard(self, waypointSymbol):
-        systemSymbol = waypointSymbol[0:waypointSymbol.find("-", 4)]
+        systemSymbol = waypointSymbol[0 : waypointSymbol.find("-", 4)]
         path = f"/systems/{systemSymbol}/waypoints/{waypointSymbol}/shipyard"
         r = self.my_req(path, "get")
         j = r.json()
@@ -483,10 +681,11 @@ class SpaceTraders:
         self.shipyards[waypointSymbol] = yard
         # TODO add ship listings when at waypoint
         with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPYARD,yard))
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPYARD, yard))
         return yard
+
     def Get_JumpGate(self, waypointSymbol):
-        systemSymbol = waypointSymbol[0:waypointSymbol.find("-", 4)]
+        systemSymbol = waypointSymbol[0 : waypointSymbol.find("-", 4)]
         path = f"/systems/{systemSymbol}/waypoints/{waypointSymbol}/jump-gate"
         r = self.my_req(path, "get")
         j = r.json()
@@ -496,8 +695,9 @@ class SpaceTraders:
         gate = JumpGate(data)
         self.jumpgates[waypointSymbol] = gate
         return gate
-    #endregion
-    
+
+    # endregion
+
     # region Contracts
     def Get_Contracts(self, page=1, limit=20):
         path = f"/my/contracts?page={page}&limit={limit}"
@@ -508,14 +708,15 @@ class SpaceTraders:
         data = j["data"] if "data" in j else None
         if data == None:
             return  # TODO raise error
-        contracts=[]
+        contracts = []
         for d in data:
             contract = Contract(d)
             contracts.append(contract)
-            self.contracts[contract.id]=contract
+            self.contracts[contract.id] = contract
         # with self.db_lock:
         #     self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
-        return (contracts,meta)
+        return (contracts, meta)
+
     def Get_Contract(self, contractId):
         path = f"/my/contracts/{contractId}"
         r = self.my_req(path, "get")
@@ -526,10 +727,11 @@ class SpaceTraders:
         if data == None:
             return  # TODO raise error
         contract = Contract(data)
-        self.contracts[contract.id]=contract
+        self.contracts[contract.id] = contract
         # with self.db_lock:
         #     self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
         return contract
+
     def Accept_Contract(self, contractId):
         path = f"/my/contracts/{contractId}/accept"
         r = self.my_req(path, "post")
@@ -540,27 +742,35 @@ class SpaceTraders:
         if data == None:
             return  # TODO raise error
         contract = Contract(data)
-        self.contracts[contract.id]=contract
+        self.contracts[contract.id] = contract
         # with self.db_lock:
         #     self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
         return contract
-    def Deliver_Contract(self, contractId,shipSymbol,tradeSymbol,units):
+
+    def Deliver_Contract(self, contractId, shipSymbol, tradeSymbol, units):
         path = f"/my/contracts/{contractId}/deliver"
-        r = self.my_req(path, "post",data={"shipSymbol": shipSymbol, "tradeSymbol": tradeSymbol, "units": units})
+        r = self.my_req(
+            path,
+            "post",
+            data={"shipSymbol": shipSymbol, "tradeSymbol": tradeSymbol, "units": units},
+        )
         j = r.json()
 
         data = j["data"] if "data" in j else None
         if data == None:
             return  # TODO raise error
         contract = Contract(data)
-        self.contracts[contract.id]=contract
+        self.contracts[contract.id] = contract
         cargo = ShipCargo(data["cargo"])
         if shipSymbol in self.ships:
             self.ships[shipSymbol].cargo = cargo
             with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPCARGO,[self.ships[shipSymbol]]))
+                self.db_queue.append(
+                    Queue_Obj(Queue_Obj_Type.SHIPCARGO, [self.ships[shipSymbol]])
+                )
                 # self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
         return contract
+
     def Fulfill_Contract(self, contractId):
         path = f"/my/contracts/{contractId}/fulfill"
         r = self.my_req(path, "post")
@@ -571,10 +781,11 @@ class SpaceTraders:
         if data == None:
             return  # TODO raise error
         contract = Contract(data)
-        self.contracts[contract.id]=contract
+        self.contracts[contract.id] = contract
         # with self.db_lock:
         #     self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
         return contract
+
     # endregion
     # region Factions
     def Get_Factions(self, page=1, limit=20):
@@ -586,14 +797,15 @@ class SpaceTraders:
         data = j["data"] if "data" in j else None
         if data == None:
             return  # TODO raise error
-        factions=[]
+        factions = []
         for d in data:
             faction = Faction(d)
             factions.append(faction)
-            self.factions[faction.symbol]=faction
+            self.factions[faction.symbol] = faction
         with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.Faction,factions))
-        return (factions,meta)
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.Faction, factions))
+        return (factions, meta)
+
     def Get_Faction(self, factionSymbol):
         path = f"/factions/{factionSymbol}"
         r = self.my_req(path, "get")
@@ -602,18 +814,19 @@ class SpaceTraders:
         data = j["data"] if "data" in j else None
         if data == None:
             return  # TODO raise error
-        
+
         faction = Faction(data)
-        self.factions[faction.symbol]=faction
+        self.factions[faction.symbol] = faction
         with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.Faction,[faction]))
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.Faction, [faction]))
         return faction
+
     # endregion
 
     # region Fleet
     def Get_Ships(self, page=1, limit=20):
         path = "/my/ships"
-        r = self.my_req(path+f"?page={page}&limit={limit}", "get")
+        r = self.my_req(path + f"?page={page}&limit={limit}", "get")
         j = r.json()
         data = j["data"] if "data" in j else None
         if data == None:
@@ -622,11 +835,16 @@ class SpaceTraders:
             ship = Ship(d)
             self.ships[ship.symbol] = ship
         with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP,[Ship(ship) for ship in data]))
-        return self.ships,Meta(j["meta"])
+            self.db_queue.append(
+                Queue_Obj(Queue_Obj_Type.SHIP, [Ship(ship) for ship in data])
+            )
+        return self.ships, Meta(j["meta"])
+
     def Purchase_Ship(self, shipType, waypointSymbol):
         path = "/my/ships"
-        r = self.my_req(path, "post", data={"shipType": shipType, "waypointSymbol": waypointSymbol})
+        r = self.my_req(
+            path, "post", data={"shipType": shipType, "waypointSymbol": waypointSymbol}
+        )
         j = r.json()
         data = j["data"] if "data" in j else None
         if data == None:
@@ -634,9 +852,10 @@ class SpaceTraders:
         self.agent = Agent(data["agent"])
         ship = Ship(data["ship"])
         with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP,ship))
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP, ship))
         self.ships[ship.symbol] = ship
         return ship
+
     def Get_Ship(self, shipSymbol):
         path = f"/my/ships/{shipSymbol}"
         r = self.my_req(path, "get")
@@ -646,8 +865,9 @@ class SpaceTraders:
             return  # TODO raise error
         self.ships[shipSymbol] = Ship(data)
         with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP,self.ships[shipSymbol]))
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP, self.ships[shipSymbol]))
         return self.ships[shipSymbol]
+
     def Get_Cargo(self, shipSymbol):
         path = f"/my/ships/{shipSymbol}/cargo"
         r = self.my_req(path, "get")
@@ -659,8 +879,11 @@ class SpaceTraders:
         if shipSymbol in self.ships:
             self.ships[shipSymbol].cargo = cargo
             with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPCARGO,self.ships[shipSymbol]))
+                self.db_queue.append(
+                    Queue_Obj(Queue_Obj_Type.SHIPCARGO, self.ships[shipSymbol])
+                )
         return cargo
+
     def Orbit(self, shipSymbol):
         path = f"/my/ships/{shipSymbol}/orbit"
         r = self.my_req(path, "post")
@@ -672,10 +895,13 @@ class SpaceTraders:
         if shipSymbol in self.ships:
             self.ships[shipSymbol].nav = shipnav
             with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
+                self.db_queue.append(
+                    Queue_Obj(Queue_Obj_Type.SHIPNAV, self.ships[shipSymbol])
+                )
         return self.ships[shipSymbol].nav
+
     # refine
-    def Chart(self, shipSymbol):  
+    def Chart(self, shipSymbol):
         path = f"/my/ships/{shipSymbol}/chart"
         r = self.my_req(path, "post")
         j = r.json()
@@ -684,11 +910,12 @@ class SpaceTraders:
             return  # TODO raise error
         chart = Chart(data["chart"])
         waypoint = Waypoint(data["waypoint"])
-        
-        self.waypoints[waypoint.symbol]=waypoint
+
+        self.waypoints[waypoint.symbol] = waypoint
         with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.WAYPOINT,[waypoint]))
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.WAYPOINT, [waypoint]))
         return (chart, waypoint)
+
     # cooldown
     def Dock(self, shipSymbol):
         path = f"/my/ships/{shipSymbol}/dock"
@@ -701,12 +928,15 @@ class SpaceTraders:
         if shipSymbol in self.ships:
             self.ships[shipSymbol].nav = shipnav
             with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
+                self.db_queue.append(
+                    Queue_Obj(Queue_Obj_Type.SHIPNAV, self.ships[shipSymbol])
+                )
         return self.ships[shipSymbol].nav
+
     # survey
     # extract
     # jettison
-    def Jump(self, shipSymbol, systemSymbol):  
+    def Jump(self, shipSymbol, systemSymbol):
         path = f"/my/ships/{shipSymbol}/jump"
         r = self.my_req(path, "post", data={"systemSymbol": systemSymbol})
         j = r.json()
@@ -719,9 +949,12 @@ class SpaceTraders:
             self.ships[shipSymbol].nav = shipnav
             self.cooldowns[shipSymbol] = cooldown
             with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
+                self.db_queue.append(
+                    Queue_Obj(Queue_Obj_Type.SHIPNAV, self.ships[shipSymbol])
+                )
                 # self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol])) # TODO cooldown to db
         return (shipnav, cooldown)
+
     def Navigate(self, shipSymbol, waypointSymbol):
         path = f"/my/ships/{shipSymbol}/navigate"
         r = self.my_req(path, "post", data={"waypointSymbol": waypointSymbol})
@@ -735,10 +968,15 @@ class SpaceTraders:
             self.ships[shipSymbol].nav = shipnav
             self.ships[shipSymbol].fuel = shipfuel
             with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol]))
+                self.db_queue.append(
+                    Queue_Obj(Queue_Obj_Type.SHIPNAV, self.ships[shipSymbol])
+                )
+                self.db_queue.append(
+                    Queue_Obj(Queue_Obj_Type.SHIPFUEL, self.ships[shipSymbol])
+                )
         return (shipnav, shipfuel)
-    def Warp(self, shipSymbol, waypointSymbol):  
+
+    def Warp(self, shipSymbol, waypointSymbol):
         path = f"/my/ships/{shipSymbol}/warp"
         r = self.my_req(path, "post", data={"waypointSymbol": waypointSymbol})
         j = r.json()
@@ -751,9 +989,14 @@ class SpaceTraders:
             self.ships[shipSymbol].nav = shipnav
             self.ships[shipSymbol].fuel = shipfuel
             with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV,self.ships[shipSymbol]))
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol]))
+                self.db_queue.append(
+                    Queue_Obj(Queue_Obj_Type.SHIPNAV, self.ships[shipSymbol])
+                )
+                self.db_queue.append(
+                    Queue_Obj(Queue_Obj_Type.SHIPFUEL, self.ships[shipSymbol])
+                )
         return (shipnav, shipfuel)
+
     def Sell(self, shipSymbol, symbol, units):
         path = f"/my/ships/{shipSymbol}/sell"
         r = self.my_req(path, "post", data={"symbol": symbol, "units": units})
@@ -766,8 +1009,11 @@ class SpaceTraders:
         if shipSymbol in self.ships:
             self.ships[shipSymbol].cargo = ShipCargo(data["cargo"])
             with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPCARGO,[self.ships[shipSymbol]]))
-        return (self.agent, self.ships[shipSymbol].cargo,transaction)
+                self.db_queue.append(
+                    Queue_Obj(Queue_Obj_Type.SHIPCARGO, [self.ships[shipSymbol]])
+                )
+        return (self.agent, self.ships[shipSymbol].cargo, transaction)
+
     # scan systems
     # scan waypoints
     # scan ships
@@ -783,8 +1029,11 @@ class SpaceTraders:
         if shipSymbol in self.ships:
             self.ships[shipSymbol].fuel = fuel
             with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol]))
+                self.db_queue.append(
+                    Queue_Obj(Queue_Obj_Type.SHIPFUEL, self.ships[shipSymbol])
+                )
         return (self.agent, fuel)
+
     def Purchase(self, shipSymbol, symbol, units):
         path = f"/my/ships/{shipSymbol}/purchase"
         r = self.my_req(path, "post", data={"symbol": symbol, "units": units})
@@ -797,11 +1046,18 @@ class SpaceTraders:
         if shipSymbol in self.ships:
             self.ships[shipSymbol].cargo = ShipCargo(data["cargo"])
             with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPCARGO,[self.ships[shipSymbol]]))
-        return (self.agent, self.ships[shipSymbol].cargo,transaction)
-    def Transfer(self, shipSymbol, symbol, units, recvShipSymbol):  
+                self.db_queue.append(
+                    Queue_Obj(Queue_Obj_Type.SHIPCARGO, [self.ships[shipSymbol]])
+                )
+        return (self.agent, self.ships[shipSymbol].cargo, transaction)
+
+    def Transfer(self, shipSymbol, symbol, units, recvShipSymbol):
         path = f"/my/ships/{shipSymbol}/transfer"
-        r = self.my_req(path, "post", data={"tradeSymbol": symbol, "units": units,"shipSymbol":recvShipSymbol})
+        r = self.my_req(
+            path,
+            "post",
+            data={"tradeSymbol": symbol, "units": units, "shipSymbol": recvShipSymbol},
+        )
         j = r.json()
         data = j["data"] if "data" in j else None
         if data == None:
@@ -810,23 +1066,27 @@ class SpaceTraders:
         if shipSymbol in self.ships:
             self.ships[shipSymbol].cargo = cargo
             with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPCARGO,[self.ships[shipSymbol]]))
+                self.db_queue.append(
+                    Queue_Obj(Queue_Obj_Type.SHIPCARGO, [self.ships[shipSymbol]])
+                )
         return cargo
+
     # endregion
 
-    
     # endregion
+
+
 if __name__ == "__main__":
-    
     st = SpaceTraders()
     st.Status()
 
+    # pprint(st.Register("feba_66","ASTRO"))
     st.Login(os.getenv("TOKEN"))
     # pprint(st.Get_Contracts())
     c_id = "clhmfp5wa0734s60dmss50pes"
-    
-    pprint(st.Accept_Contract(c_id))
-    exit()
+
+    # pprint(st.Accept_Contract(c_id))
+    # exit()
     # pprint(st.Register("test_9871","CULT"))
     # exit()
     # st.Get_Systems(limit=3)
@@ -839,43 +1099,48 @@ if __name__ == "__main__":
     # st.Navigate(ship.symbol,"X1-AC10-73119Z")
     # gate = st.Get_JumpGate("X1-AC10-73119Z")
     # pprint(gate.connectedSystems[0:10])
-    wps,_ = st.Get_Waypoints("X1-SR51")
-    warpGoal = ""
-    for w in wps:
-        if st.waypoints[w].type == WaypointType.JUMP_GATE:
-            warpGoal=w
-            break
-    pprint(st.Jump(ship.symbol,"X1-AC10"))
+    # wps,_ = st.Get_Waypoints("X1-SR51")
+    # warpGoal = ""
+    # for w in wps:
+    #     if st.waypoints[w].type == WaypointType.JUMP_GATE:
+    #         warpGoal=w
+    #         break
+    # pprint(st.Jump(ship.symbol,"X1-AC10"))
     # pprint(st.Warp(ship.symbol,"X1-AC10-73119Z"))
     time.sleep(1)
-    if False:
-        st.cur.execute("""select systemsymbol from waypoints
-                        group by systemsymbol""")   
+    if True:
+        st.cur.execute(
+            """select systemsymbol from waypoints
+                        group by systemsymbol"""
+        )
         st.conn.commit()
         known = [p[0] for p in st.cur.fetchall()]
 
         for syskey in st.systems.keys():
             sys = st.systems[syskey]
             if sys.symbol not in known:
-                l,meta = st.Get_Waypoints(sys.symbol)
+                l, meta = st.Get_Waypoints(sys.symbol)
                 if meta.total > 20:
-                    st.Get_Waypoints(sys.symbol,2)
-    if False:
-        st.cur.execute("""select symbol from waypoints
-                        where 'SHIPYARD' = any (traits)""")   
+                    st.Get_Waypoints(sys.symbol, 2)
+    if True:
+        st.cur.execute(
+            """select symbol from waypoints
+                        where 'SHIPYARD' = any (traits)"""
+        )
         st.conn.commit()
-        shipyards = [p[0] for p in st.cur.fetchall()]   
+        shipyards = [p[0] for p in st.cur.fetchall()]
         for market in shipyards:
             st.Get_Shipyard(market)
-    if False:
-        st.cur.execute("""select symbol from waypoints
-                        where 'MARKETPLACE' = any (traits)""")   
+    if True:
+        st.cur.execute(
+            """select symbol from waypoints
+                        where 'MARKETPLACE' = any (traits)"""
+        )
         st.conn.commit()
-        markets = [p[0] for p in st.cur.fetchall()]   
+        markets = [p[0] for p in st.cur.fetchall()]
         for market in markets:
             st.Get_Market(market)
     # st.Get_Market("X1-DF55-17335A")
-    # pprint(st.Register("feba66","ASTRO"))
     # pprint(st.Get_Agent())
     # pprint(st.Get_Ships())
     # pprint(st.Get_Waypoints(ship.nav.systemSymbol))
@@ -884,6 +1149,5 @@ if __name__ == "__main__":
     # pprint(st.Get_Shipyard("X1-AC10-39507F"))
     # st.Init_Systems()
     print("done")
-    while len(st.db_queue)>0:
+    while len(st.db_queue) > 0:
         time.sleep(3)
-    
