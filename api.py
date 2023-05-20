@@ -629,7 +629,20 @@ class SpaceTraders:
     # scan systems
     # scan waypoints
     # scan ships
-    # refuel
+    def Refuel(self, shipSymbol):
+        path = f"/my/ships/{shipSymbol}/refuel"
+        r = self.my_req(path, "post")
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        self.agent = Agent(data["agent"])
+        fuel = ShipFuel(data["fuel"])
+        if shipSymbol in self.ships:
+            self.ships[shipSymbol].fuel = fuel
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol]))
+        return (self.agent, fuel)
     def Purchase(self, shipSymbol, symbol, units):
         path = f"/my/ships/{shipSymbol}/purchase"
         r = self.my_req(path, "post", data={"symbol": symbol, "units": units})

@@ -49,7 +49,7 @@ Class          | HTTP request  | Description   | Implemented
 | *Fleet*      | **post** /my/ships/{shipSymbol}/scan/systems | Scan Systems | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/scan/waypoints | Scan Waypoints | 
 | *Fleet*      | **post** /my/ships/{shipSymbol}/scan/ships | Scan Ships | 
-| *Fleet*      | **post** /my/ships/{shipSymbol}/refuel | Refuel Ship | 
+| *Fleet*      | **post** /my/ships/{shipSymbol}/refuel | Refuel Ship | statekeeping & db
 | *Fleet*      | **post** /my/ships/{shipSymbol}/purchase | Purchase Cargo | statekeeping & db
 | *Fleet*      | **post** /my/ships/{shipSymbol}/transfer | Transfer Cargo | statekeeping & db
 | *Systems*    | **get** /systems | List Systems | statekeeping & db
