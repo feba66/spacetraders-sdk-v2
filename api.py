@@ -84,6 +84,7 @@ class SpaceTraders:
     jumpgates: dict[str, JumpGate]
     cooldowns: dict[str, Cooldown]
     surveys: dict[str, Survey]
+    survey_lock = threading.Lock()
     # endregion
 
     def __init__(self) -> None:
@@ -163,33 +164,16 @@ class SpaceTraders:
         )
 
         # region reworked tables
-        self.cur.execute(
-            """CREATE TABLE IF NOT EXISTS SHIPS (SYMBOL CHARACTER varying NOT NULL, faction CHARACTER varying, ROLE CHARACTER varying, FRAME CHARACTER varying,  ENGINE CHARACTER varying,  SPEED CHARACTER varying,  MODULES CHARACTER varying[],  MOUNTS CHARACTER varying[],  cargo_capacity integer, PRIMARY KEY (SYMBOL));"""
-        )
-        self.cur.execute(
-            """CREATE TABLE IF NOT EXISTS SHIPNAVS(SYMBOL CHARACTER varying NOT NULL, WAYPOINTSYMBOL CHARACTER varying, DEPARTURE CHARACTER varying, DESTINATION CHARACTER varying, ARRIVAL CHARACTER varying, DEPARTURETIME CHARACTER varying, STATUS CHARACTER varying, FLIGHTMODE CHARACTER varying, PRIMARY KEY (SYMBOL));"""
-        )
-        self.cur.execute(
-            """CREATE TABLE IF NOT EXISTS SHIPCARGOS (SYMBOL CHARACTER varying, GOOD CHARACTER varying, UNITS integer, PRIMARY KEY (SYMBOL, GOOD));"""
-        )
-        self.cur.execute(
-            """CREATE TABLE IF NOT EXISTS SHIPFUEL (SYMBOL CHARACTER varying, FUEL integer, CAPACITY integer, PRIMARY KEY (SYMBOL));"""
-        )
-        self.cur.execute(
-            """CREATE TABLE IF NOT EXISTS SHIPCONSUMTION (SYMBOL CHARACTER varying, AMOUNT integer, DEPARTEDFROM CHARACTER varying, DESTINATION CHARACTER varying, FLIGHTMODE CHARACTER varying, FLIGHTTIME integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (SYMBOL, TIMESTAMP));"""
-        )
-
-        self.cur.execute(
-            """CREATE TABLE IF NOT EXISTS CREDITLEADERBOARD (AGENTSYMBOL CHARACTER varying, CREDITS integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));"""
-        )
-        self.cur.execute(
-            """CREATE TABLE IF NOT EXISTS CHARTLEADERBOARD (AGENTSYMBOL CHARACTER varying, CHARTCOUNT integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));"""
-        )
-
-        self.cur.execute(
-            """CREATE TABLE IF NOT EXISTS FACTIONS (SYMBOL CHARACTER varying NOT NULL, name CHARACTER varying, description CHARACTER varying, headquarters CHARACTER varying,  traits CHARACTER varying[], PRIMARY KEY (SYMBOL));"""
-        )
-
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS SHIPS (SYMBOL CHARACTER varying NOT NULL, faction CHARACTER varying, ROLE CHARACTER varying, FRAME CHARACTER varying,  ENGINE CHARACTER varying,  SPEED CHARACTER varying,  MODULES CHARACTER varying[],  MOUNTS CHARACTER varying[],  cargo_capacity integer, PRIMARY KEY (SYMBOL));""")
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS SHIPNAVS(SYMBOL CHARACTER varying NOT NULL, WAYPOINTSYMBOL CHARACTER varying, DEPARTURE CHARACTER varying, DESTINATION CHARACTER varying, ARRIVAL CHARACTER varying, DEPARTURETIME CHARACTER varying, STATUS CHARACTER varying, FLIGHTMODE CHARACTER varying, PRIMARY KEY (SYMBOL));""")
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS SHIPCARGOS (SYMBOL CHARACTER varying, GOOD CHARACTER varying, UNITS integer, PRIMARY KEY (SYMBOL, GOOD));""")
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS SHIPFUEL (SYMBOL CHARACTER varying, FUEL integer, CAPACITY integer, PRIMARY KEY (SYMBOL));""")
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS SHIPCONSUMTION (SYMBOL CHARACTER varying, AMOUNT integer, DEPARTEDFROM CHARACTER varying, DESTINATION CHARACTER varying, FLIGHTMODE CHARACTER varying, FLIGHTTIME integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (SYMBOL, TIMESTAMP));""")
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS CREDITLEADERBOARD (AGENTSYMBOL CHARACTER varying, CREDITS integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));""")
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS CHARTLEADERBOARD (AGENTSYMBOL CHARACTER varying, CHARTCOUNT integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));""")
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS FACTIONS (SYMBOL CHARACTER varying NOT NULL, name CHARACTER varying, description CHARACTER varying, headquarters CHARACTER varying,  traits CHARACTER varying[], PRIMARY KEY (SYMBOL));""")
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS SURVEYS (signature CHARACTER varying,symbol CHARACTER varying,deposits CHARACTER varying[],expiration CHARACTER varying,size CHARACTER varying,timestamp CHARACTER varying,PRIMARY KEY (signature))""")
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS EXTRACTIONS (shipSymbol CHARACTER varying,symbol CHARACTER varying,units CHARACTER varying[],timestamp CHARACTER varying, PRIMARY KEY (shipSymbol,timestamp))""")
         self.conn.commit()
         # endregion
 
@@ -367,16 +351,18 @@ class SpaceTraders:
                         self.conn.commit()
                     elif q_obj.type == Queue_Obj_Type.SHIPCARGO:
                         ships: list[Ship] = q_obj.data
+                        
                         temp = []
                         for s in ships:
                             for c in s.cargo.inventory:
                                 temp.extend([s.symbol, c.symbol, c.units])
-                        self.cur.execute(
-                            f"""INSERT INTO SHIPCARGOS (SYMBOL, GOOD, UNITS)
-                            VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])}
-                            ON CONFLICT (SYMBOL, GOOD) DO UPDATE SET UNITS = excluded.UNITS""",
-                            list(temp),
-                        )
+                        if len(temp)>0:
+                            self.cur.execute(
+                                f"""INSERT INTO SHIPCARGOS (SYMBOL, GOOD, UNITS)
+                                VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])}
+                                ON CONFLICT (SYMBOL, GOOD) DO UPDATE SET UNITS = excluded.UNITS""",
+                                list(temp),
+                            )
                     elif q_obj.type == Queue_Obj_Type.SHIPNAV:
                         ship: Ship = q_obj.data
                         temp = []
@@ -531,14 +517,14 @@ class SpaceTraders:
         time.sleep(t)
 
     def clean_surveys(self):
-        for k in self.surveys.keys():
-            survey = self.surveys[k]
-            if self.time_till(survey.expiration) < 0:
-                self.surveys.pop(k)
+        with self.survey_lock:
+            for k in self.surveys.keys():
+                survey = self.surveys[k]
+                if self.time_till(survey.expiration) < 0:
+                    self.surveys.pop(k)
 
     def get_surveys_for(self, waypointSymbol):
-        keys = [k for k in self.surveys.keys(
-        ) if self.surveys[k].symbol == waypointSymbol]
+        keys = [k for k in self.surveys.keys() if self.surveys[k].symbol == waypointSymbol]
         return keys
 
     def get_survey_worth(self, survey: Survey):
@@ -1003,11 +989,13 @@ class SpaceTraders:
         cooldown = Cooldown(data["cooldown"])
         self.cooldowns[shipSymbol] = cooldown
         surveys = []
+        
         for s in data["surveys"]:
             survey = Survey(s)
             surveys.append(survey)
             # TODO add survey to database
-            self.surveys[survey.signature] = survey
+            with self.survey_lock:
+                self.surveys[survey.signature] = survey
         # self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol])) # TODO cooldown to db
         return (surveys, cooldown)
 
@@ -1018,11 +1006,11 @@ class SpaceTraders:
         data = j["data"] if "data" in j else None
         if data == None:
             error = Error(j["error"])
-            if error.code == 4221:
+            if error.code in [4221,4224]:
                 self.surveys.pop(survey.signature)
                 return (None,None,None)
             else:
-                return  # TODO raise error
+                raise Exception(j)  # TODO raise error
         extraction = Extraction(data["extraction"])
         cooldown = Cooldown(data["cooldown"])
         self.cooldowns[shipSymbol] = cooldown
