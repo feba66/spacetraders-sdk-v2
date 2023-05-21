@@ -18,6 +18,7 @@ from objects import (
     Chart,
     Contract,
     Cooldown,
+    Error,
     Extraction,
     Faction,
     JumpGate,
@@ -709,7 +710,7 @@ class SpaceTraders:
         self.markets[waypointSymbol] = market
         with self.db_lock:
             self.db_queue.append(Queue_Obj(Queue_Obj_Type.MARKET, market))
-        return data
+        return market
 
     def Get_Shipyard(self, waypointSymbol):
         systemSymbol = waypointSymbol[0: waypointSymbol.find("-", 4)]
@@ -1016,7 +1017,12 @@ class SpaceTraders:
         j = r.json()
         data = j["data"] if "data" in j else None
         if data == None:
-            return  # TODO raise error
+            error = Error(j["error"])
+            if error.code == 4221:
+                self.surveys.pop(survey.signature)
+                return (None,None,None)
+            else:
+                return  # TODO raise error
         extraction = Extraction(data["extraction"])
         cooldown = Cooldown(data["cooldown"])
         self.cooldowns[shipSymbol] = cooldown

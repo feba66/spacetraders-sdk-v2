@@ -731,3 +731,12 @@ class Extraction:
     def __init__(self, data) -> None:
         self.yield_ = ExtractionYield(data["yield"])
         self.shipSymbol = data["shipSymbol"]
+
+@dataclass
+class Error:
+    message: str
+    code: int
+
+    def __init__(self, data) -> None:
+        self.message = data["message"]
+        self.code = data["code"]
