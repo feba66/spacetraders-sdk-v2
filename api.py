@@ -59,6 +59,9 @@ class SpaceTraders:
     FORMAT_STR = "%Y-%m-%dT%H:%M:%S.%fZ"
     SERVER_URL = "https://api.spacetraders.io/v2"
 
+    WORTH = {"ALUMINUM_ORE": 40, "AMMONIA_ICE": 26, "COPPER_ORE": 50, "DIAMONDS": 3454, "FUEL": 234, "GOLD_ORE": 57,
+             "ICE_WATER": 7, "IRON_ORE": 37, "PLATINUM_ORE": 61, "QUARTZ_SAND": 16, "SILICON_CRYSTALS": 24, "SILVER_ORE": 56}
+
     # region variables
     session: requests.Session
     logger: logging.Logger
@@ -227,9 +230,10 @@ class SpaceTraders:
                         for i in range(ceil(len(systems) / 1000)):
                             temp = []
                             for sys in systems[
-                                i * 1000 : min((i + 1) * 1000, len(systems))
+                                i * 1000: min((i + 1) * 1000, len(systems))
                             ]:
-                                temp.extend([sys.symbol, sys.type.name, sys.x, sys.y])
+                                temp.extend(
+                                    [sys.symbol, sys.type.name, sys.x, sys.y])
                             self.cur.execute(
                                 f"""INSERT INTO systems (symbol, type, x,y)
                             VALUES {','.join([f'(%s, %s, %s, %s)' for _ in range(int(len(temp)/4))])} 
@@ -320,7 +324,8 @@ class SpaceTraders:
                         )
                         temp = []
                         for s in ships:
-                            temp.extend([s.symbol, s.fuel.current, s.fuel.capacity])
+                            temp.extend(
+                                [s.symbol, s.fuel.current, s.fuel.capacity])
                         self.cur.execute(
                             f"""INSERT INTO SHIPFUEL (SYMBOL, FUEL, CAPACITY)
                         VALUES {','.join([f'(%s,%s,%s)' for _ in range(int(len(temp)/3))])}
@@ -399,7 +404,8 @@ class SpaceTraders:
                         ship: Ship = q_obj.data
                         temp = []
                         for s in [ship]:
-                            temp.extend([s.symbol, s.fuel.current, s.fuel.capacity])
+                            temp.extend(
+                                [s.symbol, s.fuel.current, s.fuel.capacity])
                         self.cur.execute(
                             f"""INSERT INTO SHIPFUEL (SYMBOL, FUEL, CAPACITY)
                         VALUES {','.join([f'(%s,%s,%s)' for _ in range(int(len(temp)/3))])}
@@ -476,7 +482,8 @@ class SpaceTraders:
     @ratelimit.sleep_and_retry
     @ratelimit.limits(calls=3, period=1)
     def my_req(self, url, method, data=None, json=None):
-        r = self.session.request(method, self.SERVER_URL + url, data=data, json=json)
+        r = self.session.request(
+            method, self.SERVER_URL + url, data=data, json=json)
 
         self.logger.info(f"{r.request.method} {r.request.url} {r.status_code}")
         self.logger.debug(
@@ -486,9 +493,11 @@ class SpaceTraders:
         while r.status_code == 429:
             time.sleep(0.5)
 
-            r = self.session.request(method, self.SERVER_URL + url, data=data, json=json)
+            r = self.session.request(
+                method, self.SERVER_URL + url, data=data, json=json)
 
-            self.logger.info(f"{r.request.method} {r.request.url} {r.status_code}")
+            self.logger.info(
+                f"{r.request.method} {r.request.url} {r.status_code}")
             self.logger.debug(
                 f"{r.request.method} {r.request.url} {r.status_code} {r.text}"
             )
@@ -501,16 +510,16 @@ class SpaceTraders:
         self.session.headers.update({"Authorization": "Bearer " + token})
 
     # region helpers
-    def parse_time(self, tstr):
+    def parse_time(self, tstr: str):
         return datetime.strptime(tstr, self.FORMAT_STR)
 
-    def get_time_diff(self, big, small):
+    def get_time_diff(self, big: datetime, small: datetime):
         return (big - small).total_seconds()
 
-    def time_till(self, future):
+    def time_till(self, future: str):
         return self.get_time_diff(self.parse_time(future), datetime.utcnow())
 
-    def sleep_till(self, nav: ShipNav=None,cooldown: Cooldown = None):
+    def sleep_till(self, nav: ShipNav = None, cooldown: Cooldown = None):
         if nav != None:
             t = max(0, self.time_till(nav.route.arrival))
         elif cooldown != None:
@@ -520,6 +529,26 @@ class SpaceTraders:
         self.logger.info(f"Sleep for {t}")
         time.sleep(t)
 
+    def clean_surveys(self):
+        for k in self.surveys.keys():
+            survey = self.surveys[k]
+            if self.time_till(survey.expiration) < 0:
+                self.surveys.pop(k)
+
+    def get_surveys_for(self, waypointSymbol):
+        keys = [k for k in self.surveys.keys(
+        ) if self.surveys[k].symbol == waypointSymbol]
+        return keys
+
+    def get_survey_worth(self, survey: Survey):
+        value = sum([self.WORTH[g.symbol]
+                    for g in survey.deposits])/len(survey.deposits)
+        return value
+
+    def sort_surveys_by_worth(self, surveys: list[str]):
+        sortd = [(k, self.get_survey_worth(self.surveys[k])) for k in surveys]
+        sortd.sort(key=lambda x: x[1], reverse=True)
+        return sortd
     # endregion
 
     # region endpoints
@@ -534,7 +563,8 @@ class SpaceTraders:
                 data={"symbol": symbol, "faction": faction, "email": email},
             )
         else:
-            r = self.my_req(path, "post", data={"symbol": symbol, "faction": faction})
+            r = self.my_req(path, "post", data={
+                            "symbol": symbol, "faction": faction})
 
         j = r.json()
         data = j["data"] if "data" in j else None
@@ -557,7 +587,8 @@ class SpaceTraders:
         try:
             with self.db_lock:
                 self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.LEADERBOARD, r.json()["leaderboards"])
+                    Queue_Obj(Queue_Obj_Type.LEADERBOARD,
+                              r.json()["leaderboards"])
                 )
         except:
             pass
@@ -600,14 +631,16 @@ class SpaceTraders:
             j = r.json()
             with self.db_lock:
                 self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SYSTEM, [System(system) for system in j])
+                    Queue_Obj(Queue_Obj_Type.SYSTEM, [
+                              System(system) for system in j])
                 )
         else:
             with open("systems.json", "r") as f:
                 j = json.load(f)
             with self.db_lock:
                 self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SYSTEM, [System(system) for system in j])
+                    Queue_Obj(Queue_Obj_Type.SYSTEM, [
+                              System(system) for system in j])
                 )
         for s in j:
             system = System(s)
@@ -645,12 +678,13 @@ class SpaceTraders:
         if len(way) > 0:
             with self.db_lock:
                 self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.WAYPOINT, [self.waypoints[w] for w in way])
+                    Queue_Obj(Queue_Obj_Type.WAYPOINT, [
+                              self.waypoints[w] for w in way])
                 )
         return (way, meta)
 
     def Get_Waypoint(self, waypointSymbol):
-        systemSymbol = waypointSymbol[0 : waypointSymbol.find("-", 4)]
+        systemSymbol = waypointSymbol[0: waypointSymbol.find("-", 4)]
         path = f"/systems/{systemSymbol}/waypoints/{waypointSymbol}"
         r = self.my_req(path, "get")
         j = r.json()
@@ -664,7 +698,7 @@ class SpaceTraders:
         return w
 
     def Get_Market(self, waypointSymbol):
-        systemSymbol = waypointSymbol[0 : waypointSymbol.find("-", 4)]
+        systemSymbol = waypointSymbol[0: waypointSymbol.find("-", 4)]
         path = f"/systems/{systemSymbol}/waypoints/{waypointSymbol}/market"
         r = self.my_req(path, "get")
         j = r.json()
@@ -678,7 +712,7 @@ class SpaceTraders:
         return data
 
     def Get_Shipyard(self, waypointSymbol):
-        systemSymbol = waypointSymbol[0 : waypointSymbol.find("-", 4)]
+        systemSymbol = waypointSymbol[0: waypointSymbol.find("-", 4)]
         path = f"/systems/{systemSymbol}/waypoints/{waypointSymbol}/shipyard"
         r = self.my_req(path, "get")
         j = r.json()
@@ -693,7 +727,7 @@ class SpaceTraders:
         return yard
 
     def Get_JumpGate(self, waypointSymbol):
-        systemSymbol = waypointSymbol[0 : waypointSymbol.find("-", 4)]
+        systemSymbol = waypointSymbol[0: waypointSymbol.find("-", 4)]
         path = f"/systems/{systemSymbol}/waypoints/{waypointSymbol}/jump-gate"
         r = self.my_req(path, "get")
         j = r.json()
@@ -760,7 +794,8 @@ class SpaceTraders:
         r = self.my_req(
             path,
             "post",
-            data={"shipSymbol": shipSymbol, "tradeSymbol": tradeSymbol, "units": units},
+            data={"shipSymbol": shipSymbol,
+                  "tradeSymbol": tradeSymbol, "units": units},
         )
         j = r.json()
 
@@ -774,7 +809,8 @@ class SpaceTraders:
             self.ships[shipSymbol].cargo = cargo
             with self.db_lock:
                 self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SHIPCARGO, [self.ships[shipSymbol]])
+                    Queue_Obj(Queue_Obj_Type.SHIPCARGO,
+                              [self.ships[shipSymbol]])
                 )
                 # self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
         return contract
@@ -873,7 +909,8 @@ class SpaceTraders:
             return  # TODO raise error
         self.ships[shipSymbol] = Ship(data)
         with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP, self.ships[shipSymbol]))
+            self.db_queue.append(
+                Queue_Obj(Queue_Obj_Type.SHIP, self.ships[shipSymbol]))
         return self.ships[shipSymbol]
 
     def Get_Cargo(self, shipSymbol):
@@ -921,17 +958,20 @@ class SpaceTraders:
 
         self.waypoints[waypoint.symbol] = waypoint
         with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.WAYPOINT, [waypoint]))
+            self.db_queue.append(
+                Queue_Obj(Queue_Obj_Type.WAYPOINT, [waypoint]))
         return (chart, waypoint)
 
     def Get_Cooldown(self, shipSymbol):
         path = f"/my/ships/{shipSymbol}/cooldown"
         r = self.my_req(path, "get")
+        if r.status_code==204:
+            return Cooldown({"remainingSeconds":0,"totalSeconds":0,"expiration":datetime.strftime(datetime.utcnow(),self.FORMAT_STR),"shipSymbol":shipSymbol})
         j = r.json()
         data = j["data"] if "data" in j else None
         if data == None:
             return  # TODO raise error
-        
+
         cooldown = Cooldown(data)
         self.cooldowns[shipSymbol] = cooldown
         return cooldown
@@ -961,17 +1001,18 @@ class SpaceTraders:
             return  # TODO raise error
         cooldown = Cooldown(data["cooldown"])
         self.cooldowns[shipSymbol] = cooldown
-        surveys=[]
+        surveys = []
         for s in data["surveys"]:
             survey = Survey(s)
             surveys.append(survey)
-            self.surveys[survey.signature]=survey # TODO add survey to database
+            # TODO add survey to database
+            self.surveys[survey.signature] = survey
         # self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol])) # TODO cooldown to db
-        return (surveys,cooldown)
-    
-    def Extract(self, shipSymbol, survey:Survey = None):
+        return (surveys, cooldown)
+
+    def Extract(self, shipSymbol, survey: Survey = None):
         path = f"/my/ships/{shipSymbol}/extract"
-        r = self.my_req(path, "post",json={"survey":survey.dict()})
+        r = self.my_req(path, "post", json={"survey": survey.dict()})
         j = r.json()
         data = j["data"] if "data" in j else None
         if data == None:
@@ -984,11 +1025,13 @@ class SpaceTraders:
             self.ships[shipSymbol].cargo = cargo
             with self.db_lock:
                 self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SHIPCARGO, [self.ships[shipSymbol]])
+                    Queue_Obj(Queue_Obj_Type.SHIPCARGO,
+                              [self.ships[shipSymbol]])
                 )
         # self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol])) # TODO cooldown to db
-        return (extraction,cargo,cooldown)
+        return (extraction, cargo, cooldown)
     # jettison
+
     def Jump(self, shipSymbol, systemSymbol):
         path = f"/my/ships/{shipSymbol}/jump"
         r = self.my_req(path, "post", data={"systemSymbol": systemSymbol})
@@ -1057,7 +1100,8 @@ class SpaceTraders:
             self.ships[shipSymbol].cargo = ShipCargo(data["cargo"])
             with self.db_lock:
                 self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SHIPCARGO, [self.ships[shipSymbol]])
+                    Queue_Obj(Queue_Obj_Type.SHIPCARGO,
+                              [self.ships[shipSymbol]])
                 )
         return (self.agent, self.ships[shipSymbol].cargo, transaction)
 
@@ -1095,7 +1139,8 @@ class SpaceTraders:
             self.ships[shipSymbol].cargo = ShipCargo(data["cargo"])
             with self.db_lock:
                 self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SHIPCARGO, [self.ships[shipSymbol]])
+                    Queue_Obj(Queue_Obj_Type.SHIPCARGO,
+                              [self.ships[shipSymbol]])
                 )
         return (self.agent, self.ships[shipSymbol].cargo, transaction)
 
@@ -1104,7 +1149,8 @@ class SpaceTraders:
         r = self.my_req(
             path,
             "post",
-            data={"tradeSymbol": symbol, "units": units, "shipSymbol": recvShipSymbol},
+            data={"tradeSymbol": symbol, "units": units,
+                  "shipSymbol": recvShipSymbol},
         )
         j = r.json()
         data = j["data"] if "data" in j else None
@@ -1115,7 +1161,8 @@ class SpaceTraders:
             self.ships[shipSymbol].cargo = cargo
             with self.db_lock:
                 self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SHIPCARGO, [self.ships[shipSymbol]])
+                    Queue_Obj(Queue_Obj_Type.SHIPCARGO,
+                              [self.ships[shipSymbol]])
                 )
         return cargo
 
@@ -1144,10 +1191,6 @@ if __name__ == "__main__":
     st.Init_Systems()
     st.Get_Ships()
     ship = list(st.ships.values())[0]
-
-    
-
-
 
     # survey = Survey(json.loads('{"signature": "X1-UY52-72325C-B211DC","symbol": "X1-UY52-72325C","deposits": [{"symbol": "SILVER_ORE"},{"symbol": "ICE_WATER"},{"symbol": "ICE_WATER"}],"expiration": "2023-05-21T00:15:59.841Z","size": "MODERATE"}'))
     # pprint(st.Extract(ship.symbol,survey))
