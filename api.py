@@ -321,12 +321,13 @@ class SpaceTraders:
                         for s in ships:
                             for c in s.cargo.inventory:
                                 temp.extend([s.symbol, c.symbol, c.units])
-                        self.cur.execute(
-                            f"""INSERT INTO SHIPCARGOS (SYMBOL, GOOD, UNITS)
-                            VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])}
-                            ON CONFLICT (SYMBOL, GOOD) DO UPDATE SET UNITS = excluded.UNITS""",
-                            list(temp),
-                        )
+                        if len(temp)>0:
+                            self.cur.execute(
+                                f"""INSERT INTO SHIPCARGOS (SYMBOL, GOOD, UNITS)
+                                VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])}
+                                ON CONFLICT (SYMBOL, GOOD) DO UPDATE SET UNITS = excluded.UNITS""",
+                                list(temp),
+                            )
                         temp = []
                         for s in ships:
                             temp.extend(
@@ -883,7 +884,7 @@ class SpaceTraders:
         self.agent = Agent(data["agent"])
         ship = Ship(data["ship"])
         with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP, ship))
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP, [ship]))
         self.ships[ship.symbol] = ship
         return ship
 
@@ -1001,7 +1002,10 @@ class SpaceTraders:
 
     def Extract(self, shipSymbol, survey: Survey = None):
         path = f"/my/ships/{shipSymbol}/extract"
-        r = self.my_req(path, "post", json={"survey": survey.dict()})
+        if survey:
+            r = self.my_req(path, "post", json={"survey": survey.dict()})
+        else:
+            r = self.my_req(path, "post")
         j = r.json()
         data = j["data"] if "data" in j else None
         if data == None:
@@ -1183,6 +1187,7 @@ if __name__ == "__main__":
     # st.Get_Market("X1-JP81-52264Z")
     # exit()
     st.Init_Systems()
+    # st.Purchase_Ship("SHIP_ORE_HOUND","X1-UY52-72027D")
     st.Get_Ships()
     ship = list(st.ships.values())[0]
 
@@ -1202,6 +1207,19 @@ if __name__ == "__main__":
     # pprint(st.Jump(ship.symbol,"X1-AC10"))
     # pprint(st.Warp(ship.symbol,"X1-AC10-73119Z"))
     time.sleep(1)
+    if True:
+        st.cur.execute(
+            """select systemsymbol from waypoints
+               where 'UNCHARTED' = any(traits)
+               group by systemsymbol"""
+        )
+        st.conn.commit()
+        todo = [p[0] for p in st.cur.fetchall()]
+
+        for t in todo:
+            l, meta = st.Get_Waypoints(t)
+            if meta.total > 20:
+                st.Get_Waypoints(t, 2)
     if False:
         st.cur.execute(
             """select systemsymbol from waypoints
