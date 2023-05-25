@@ -1,3 +1,4 @@
+from math import ceil
 import os
 import time
 from api import SpaceTraders
@@ -17,7 +18,7 @@ def mine(st:SpaceTraders, ship:Ship):
         if cd!=None:
             st.sleep_till(cooldown=cd)
         surveys = st.sort_surveys_by_worth(st.get_surveys_for(ship.nav.waypointSymbol))
-        if len(surveys)<1 or surveys[0][1]<40:
+        if len(surveys)<10:
             if ship.nav.status != ShipNavStatus.IN_ORBIT:
                 st.Orbit(ship.symbol)
             _,cd = st.Create_Survey(ship.symbol)
@@ -34,12 +35,14 @@ running = True
 
 st = SpaceTraders()
 st.Login(os.getenv("TOKEN"))
-
+st.Get_Agent()
 i = 20
 ships = []
 while len(st.db_queue) > 0 or running:
     if i >= 20:
-        st.Get_Ships()
+        _,meta = st.Get_Ships()
+        while meta.page < ceil(meta.total/20):
+            _,meta = st.Get_Ships(meta.page+1)
         for ship in list(st.ships.values()):
             if ship.symbol not in ships:
                 ships.append(ship.symbol)
@@ -47,6 +50,8 @@ while len(st.db_queue) > 0 or running:
                 t.daemon=True
                 t.start()
         i=0
+        if st.agent.credits>=500000 and meta.total<30:
+            st.Purchase_Ship("SHIP_ORE_HOUND","X1-UY52-72027D")
     
     time.sleep(3)
     i+=1

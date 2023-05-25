@@ -41,13 +41,19 @@ class Agent:
     headquarters: str
     credits: int
     startingFaction: str
-    def __init__(self, data) -> None:
-        self.accountId = data["accountId"]
-        self.symbol = data["symbol"]
-        self.headquarters = data["headquarters"]
-        self.credits = data["credits"]
-        self.startingFaction = data["startingFaction"]
-
+    def __init__(self, data=None) -> None:
+        if data != None:
+            self.accountId = data["accountId"]
+            self.symbol = data["symbol"]
+            self.headquarters = data["headquarters"]
+            self.credits = data["credits"]
+            self.startingFaction = data["startingFaction"]
+        else:
+            self.accountId = ""
+            self.symbol = ""
+            self.headquarters = ""
+            self.credits = 0
+            self.startingFaction = ""
 
 @dataclass
 class ContractPayment:

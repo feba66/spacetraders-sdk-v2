@@ -60,7 +60,7 @@ class SpaceTraders:
     FORMAT_STR = "%Y-%m-%dT%H:%M:%S.%fZ"
     SERVER_URL = "https://api.spacetraders.io/v2"
 
-    WORTH = {"ALUMINUM_ORE": 40, "AMMONIA_ICE": 26, "COPPER_ORE": 50, "DIAMONDS": 3454, "FUEL": 234, "GOLD_ORE": 57,
+    worth = {"ALUMINUM_ORE": 40, "AMMONIA_ICE": 26, "COPPER_ORE": 50, "DIAMONDS": 3454, "FUEL": 234, "GOLD_ORE": 57,
              "ICE_WATER": 7, "IRON_ORE": 37, "PLATINUM_ORE": 61, "QUARTZ_SAND": 16, "SILICON_CRYSTALS": 24, "SILVER_ORE": 56}
 
     # region variables
@@ -102,6 +102,7 @@ class SpaceTraders:
         self.cooldowns = {}
         self.surveys = {}
         self.db_queue = []
+        self.agent = Agent()
         # endregion
         # region logging
         self.logger = logging.getLogger(
@@ -134,13 +135,13 @@ class SpaceTraders:
         # endregion
 
     def db_thread(self):
-        user = os.getenv("USER")
+        user = os.getenv("DB_USER")
         db = os.getenv("DB")
         ip = os.getenv("IP")
         port = os.getenv("PORT")
 
         self.conn = psycopg2.connect(
-            dbname=db, user=user, password=os.getenv("PASSWORD"), host=ip, port=port
+            dbname=db, user=user, password=os.getenv("DB_PASSWORD"), host=ip, port=port
         )
         self.cur = self.conn.cursor()
 
@@ -529,7 +530,7 @@ class SpaceTraders:
         return keys
 
     def get_survey_worth(self, survey: Survey):
-        value = sum([self.WORTH[g.symbol]
+        value = sum([self.worth[g.symbol]
                     for g in survey.deposits])/len(survey.deposits)
         return value
 
@@ -1094,6 +1095,7 @@ class SpaceTraders:
             return  # TODO raise error
         self.agent = Agent(data["agent"])
         transaction = MarketTransaction(data["transaction"])
+        self.worth[transaction.tradeSymbol]=transaction.pricePerUnit
         if shipSymbol in self.ships:
             self.ships[shipSymbol].cargo = ShipCargo(data["cargo"])
             with self.db_lock:
