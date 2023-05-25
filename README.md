@@ -15,7 +15,10 @@ py api.py
 - [ ] add monitoring, measure time of the requests and send them to the db aswell
 - [ ] add cooldown to database
 - [ ] add contracts to database
-- [ ] add survey to database
+- [ ] add surveys to database
+- [ ] add agent to database
+- [ ] add extractions to database
+- [ ] add transactions to database
 
 ## Documentation for API Endpoints
 
