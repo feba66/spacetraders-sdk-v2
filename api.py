@@ -1,4 +1,7 @@
 from datetime import datetime
+from http.client import RemoteDisconnected
+from urllib3.exceptions import ProtocolError
+from requests.exceptions import ConnectionError
 from math import ceil
 import threading
 import time
@@ -67,6 +70,8 @@ class SpaceTraders:
     session: requests.Session
     logger: logging.Logger
 
+    use_db: bool
+
     t_db: threading.Thread
     db_queue: list[Queue_Obj]
     db_lock: threading.Lock
@@ -85,9 +90,11 @@ class SpaceTraders:
     cooldowns: dict[str, Cooldown]
     surveys: dict[str, Survey]
     survey_lock = threading.Lock()
+
+    token:str
     # endregion
 
-    def __init__(self) -> None:
+    def __init__(self,db=True) -> None:
         load_dotenv(".env")
 
         # region inits
@@ -103,16 +110,13 @@ class SpaceTraders:
         self.surveys = {}
         self.db_queue = []
         self.agent = Agent()
+        self.token = None
         # endregion
         # region logging
-        self.logger = logging.getLogger(
-            "SpaceTraders-" + str(threading.current_thread().native_id)
-        )
+        self.logger = logging.getLogger("SpaceTraders-" + str(threading.current_thread().native_id))
         self.logger.setLevel(logging.DEBUG)
 
-        formatter = logging.Formatter(
-            "%(asctime)s - %(thread)d - %(name)s - %(levelname)s - %(message)s"
-        )
+        formatter = logging.Formatter("%(asctime)s - %(thread)d - %(name)s - %(levelname)s - %(message)s")
 
         ch = logging.StreamHandler()
         ch.setLevel(logging.INFO)
@@ -127,11 +131,13 @@ class SpaceTraders:
         self.logger.addHandler(ch)
         # endregion
         # region db
-        self.db_lock = threading.Lock()
-        self.db_queue = []
-        self.t_db = threading.Thread(target=self.db_thread, name="DB_Thread")
-        self.t_db.daemon = True
-        self.t_db.start()
+        self.use_db=db
+        if self.use_db:
+            self.db_lock = threading.Lock()
+            self.db_queue = []
+            self.t_db = threading.Thread(target=self.db_thread, name="DB_Thread")
+            self.t_db.daemon = True
+            self.t_db.start()
         # endregion
 
     def db_thread(self):
@@ -140,41 +146,27 @@ class SpaceTraders:
         ip = os.getenv("IP")
         port = os.getenv("PORT")
 
-        self.conn = psycopg2.connect(
-            dbname=db, user=user, password=os.getenv("DB_PASSWORD"), host=ip, port=port
-        )
+        self.conn = psycopg2.connect(dbname=db, user=user, password=os.getenv("DB_PASSWORD"), host=ip, port=port)
         self.cur = self.conn.cursor()
 
-        self.cur.execute(
-            "CREATE TABLE IF NOT EXISTS waypoints (systemSymbol varchar, symbol varchar PRIMARY KEY, type varchar, x integer,y integer,orbitals varchar[],traits varchar[],chart varchar,faction varchar);"
-        )
-        self.cur.execute(
-            "CREATE TABLE IF NOT EXISTS systems (symbol varchar PRIMARY KEY, type varchar, x integer, y integer);"
-        )
-        self.cur.execute(
-            "CREATE TABLE IF NOT EXISTS markets (symbol varchar, good varchar, type varchar, PRIMARY KEY (symbol, good, type));"
-        )
-        self.cur.execute(
-            "CREATE TABLE IF NOT EXISTS shipyards (symbol varchar, shiptype varchar, PRIMARY KEY (symbol, shiptype));"
-        )
-        self.cur.execute(
-            "CREATE TABLE IF NOT EXISTS prices (waypointsymbol varchar, symbol varchar, supply varchar, purchase integer, sell integer,tradevolume integer,timestamp varchar, PRIMARY KEY (waypointsymbol, symbol,timestamp));"
-        )
-        self.cur.execute(
-            "CREATE TABLE IF NOT EXISTS transactions (WAYPOINTSYMBOL varchar, SHIPSYMBOL varchar, TRADESYMBOL varchar, TYPE varchar, UNITS integer, PRICEPERUNIT integer, TOTALPRICE integer, timestamp varchar, PRIMARY KEY (WAYPOINTSYMBOL,TRADESYMBOL,SHIPSYMBOL, timestamp));"
-        )
+        self.cur.execute("CREATE TABLE IF NOT EXISTS waypoints (systemSymbol varchar, symbol varchar PRIMARY KEY, type varchar, x integer,y integer,orbitals varchar[],traits varchar[],chart varchar,faction varchar);")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS systems (symbol varchar PRIMARY KEY, type varchar, x integer, y integer);")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS markets (symbol varchar, good varchar, type varchar, PRIMARY KEY (symbol, good, type));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS shipyards (symbol varchar, shiptype varchar, PRIMARY KEY (symbol, shiptype));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS prices (waypointsymbol varchar, symbol varchar, supply varchar, purchase integer, sell integer,tradevolume integer,timestamp varchar, PRIMARY KEY (waypointsymbol, symbol,timestamp));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS transactions (WAYPOINTSYMBOL varchar, SHIPSYMBOL varchar, TRADESYMBOL varchar, TYPE varchar, UNITS integer, PRICEPERUNIT integer, TOTALPRICE integer, timestamp varchar, PRIMARY KEY (WAYPOINTSYMBOL,TRADESYMBOL,SHIPSYMBOL, timestamp));")
 
         # region reworked tables
-        self.cur.execute("""CREATE TABLE IF NOT EXISTS SHIPS (SYMBOL CHARACTER varying NOT NULL, faction CHARACTER varying, ROLE CHARACTER varying, FRAME CHARACTER varying,  ENGINE CHARACTER varying,  SPEED CHARACTER varying,  MODULES CHARACTER varying[],  MOUNTS CHARACTER varying[],  cargo_capacity integer, PRIMARY KEY (SYMBOL));""")
-        self.cur.execute("""CREATE TABLE IF NOT EXISTS SHIPNAVS(SYMBOL CHARACTER varying NOT NULL, WAYPOINTSYMBOL CHARACTER varying, DEPARTURE CHARACTER varying, DESTINATION CHARACTER varying, ARRIVAL CHARACTER varying, DEPARTURETIME CHARACTER varying, STATUS CHARACTER varying, FLIGHTMODE CHARACTER varying, PRIMARY KEY (SYMBOL));""")
-        self.cur.execute("""CREATE TABLE IF NOT EXISTS SHIPCARGOS (SYMBOL CHARACTER varying, GOOD CHARACTER varying, UNITS integer, PRIMARY KEY (SYMBOL, GOOD));""")
-        self.cur.execute("""CREATE TABLE IF NOT EXISTS SHIPFUEL (SYMBOL CHARACTER varying, FUEL integer, CAPACITY integer, PRIMARY KEY (SYMBOL));""")
-        self.cur.execute("""CREATE TABLE IF NOT EXISTS SHIPCONSUMTION (SYMBOL CHARACTER varying, AMOUNT integer, DEPARTEDFROM CHARACTER varying, DESTINATION CHARACTER varying, FLIGHTMODE CHARACTER varying, FLIGHTTIME integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (SYMBOL, TIMESTAMP));""")
-        self.cur.execute("""CREATE TABLE IF NOT EXISTS CREDITLEADERBOARD (AGENTSYMBOL CHARACTER varying, CREDITS integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));""")
-        self.cur.execute("""CREATE TABLE IF NOT EXISTS CHARTLEADERBOARD (AGENTSYMBOL CHARACTER varying, CHARTCOUNT integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));""")
-        self.cur.execute("""CREATE TABLE IF NOT EXISTS FACTIONS (SYMBOL CHARACTER varying NOT NULL, name CHARACTER varying, description CHARACTER varying, headquarters CHARACTER varying,  traits CHARACTER varying[], PRIMARY KEY (SYMBOL));""")
-        self.cur.execute("""CREATE TABLE IF NOT EXISTS SURVEYS (signature CHARACTER varying,symbol CHARACTER varying,deposits CHARACTER varying[],expiration CHARACTER varying,size CHARACTER varying,timestamp CHARACTER varying,PRIMARY KEY (signature))""")
-        self.cur.execute("""CREATE TABLE IF NOT EXISTS EXTRACTIONS (shipSymbol CHARACTER varying,symbol CHARACTER varying,units CHARACTER varying[],timestamp CHARACTER varying, PRIMARY KEY (shipSymbol,timestamp))""")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPS (SYMBOL CHARACTER varying NOT NULL, faction CHARACTER varying, ROLE CHARACTER varying, FRAME CHARACTER varying,  ENGINE CHARACTER varying,  SPEED CHARACTER varying,  MODULES CHARACTER varying[],  MOUNTS CHARACTER varying[],  cargo_capacity integer, PRIMARY KEY (SYMBOL));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPNAVS(SYMBOL CHARACTER varying NOT NULL, WAYPOINTSYMBOL CHARACTER varying, DEPARTURE CHARACTER varying, DESTINATION CHARACTER varying, ARRIVAL CHARACTER varying, DEPARTURETIME CHARACTER varying, STATUS CHARACTER varying, FLIGHTMODE CHARACTER varying, PRIMARY KEY (SYMBOL));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPCARGOS (SYMBOL CHARACTER varying, GOOD CHARACTER varying, UNITS integer, PRIMARY KEY (SYMBOL, GOOD));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPFUEL (SYMBOL CHARACTER varying, FUEL integer, CAPACITY integer, PRIMARY KEY (SYMBOL));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPCONSUMTION (SYMBOL CHARACTER varying, AMOUNT integer, DEPARTEDFROM CHARACTER varying, DESTINATION CHARACTER varying, FLIGHTMODE CHARACTER varying, FLIGHTTIME integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (SYMBOL, TIMESTAMP));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS CREDITLEADERBOARD (AGENTSYMBOL CHARACTER varying, CREDITS integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS CHARTLEADERBOARD (AGENTSYMBOL CHARACTER varying, CHARTCOUNT integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS FACTIONS (SYMBOL CHARACTER varying NOT NULL, name CHARACTER varying, description CHARACTER varying, headquarters CHARACTER varying,  traits CHARACTER varying[], PRIMARY KEY (SYMBOL));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS SURVEYS (signature CHARACTER varying,symbol CHARACTER varying,deposits CHARACTER varying[],expiration CHARACTER varying,size CHARACTER varying,timestamp CHARACTER varying,PRIMARY KEY (signature))")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS EXTRACTIONS (shipSymbol CHARACTER varying,symbol CHARACTER varying,units CHARACTER varying[],timestamp CHARACTER varying, PRIMARY KEY (shipSymbol,timestamp))")
         self.conn.commit()
         # endregion
 
@@ -468,34 +460,39 @@ class SpaceTraders:
             else:
                 time.sleep(0.01)
 
+    def req_and_log(self, url, method, data=None, json=None):
+        # before = time.perf_counter()
+        r = self.session.request(method, self.SERVER_URL + url, data=data, json=json)
+        # after = time.perf_counter()
+
+        self.logger.info(f"{r.request.method} {r.request.url} {r.status_code}")
+        self.logger.debug(f"{r.request.method} {r.request.url} {r.status_code} {r.text}")
+        return r
+
     @ratelimit.sleep_and_retry
     @ratelimit.limits(calls=3, period=1)
     def my_req(self, url, method, data=None, json=None):
-        r = self.session.request(
-            method, self.SERVER_URL + url, data=data, json=json)
-
-        self.logger.info(f"{r.request.method} {r.request.url} {r.status_code}")
-        self.logger.debug(
-            f"{r.request.method} {r.request.url} {r.status_code} {r.text}"
-        )
-
-        while r.status_code == 429:
-            time.sleep(0.5)
-
-            r = self.session.request(
-                method, self.SERVER_URL + url, data=data, json=json)
-
-            self.logger.info(
-                f"{r.request.method} {r.request.url} {r.status_code}")
-            self.logger.debug(
-                f"{r.request.method} {r.request.url} {r.status_code} {r.text}"
-            )
-
+        try:
+            r = self.req_and_log(url, method, data, json)
+            while r.status_code == 429:
+                time.sleep(0.5)
+                r = self.req_and_log(url, method, data, json)
+        except RemoteDisconnected as e:
+            self.reset_connection()
+        except ProtocolError as e:
+            self.reset_connection()
+        except ConnectionError as e:
+            self.reset_connection()
         # TODO add monitoring, measure time of the requests and send them to the db aswell
 
         return r
-
+    def reset_connection(self):
+        self.session = requests.session()
+        if self.token!=None:
+            self.Login(self.token)
+        time.sleep(5)
     def Login(self, token):
+        self.token=token
         self.session.headers.update({"Authorization": "Bearer " + token})
 
     # region helpers
@@ -546,14 +543,9 @@ class SpaceTraders:
         if 3 > len(symbol) > 14:
             raise ValueError("symbol must be 3-14 characters long")
         if email != None:
-            r = self.my_req(
-                path,
-                "post",
-                data={"symbol": symbol, "faction": faction, "email": email},
-            )
+            r = self.my_req(path, "post", data={"symbol": symbol, "faction": faction, "email": email},)
         else:
-            r = self.my_req(path, "post", data={
-                            "symbol": symbol, "faction": faction})
+            r = self.my_req(path, "post", data={"symbol": symbol, "faction": faction})
 
         j = r.json()
         data = j["data"] if "data" in j else None
@@ -573,14 +565,13 @@ class SpaceTraders:
     def Status(self):
         path = "/"
         r = self.my_req(path, "get")
-        try:
-            with self.db_lock:
-                self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.LEADERBOARD,
-                              r.json()["leaderboards"])
-                )
-        except:
-            pass
+        
+        if self.use_db:
+            try:
+                with self.db_lock:
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.LEADERBOARD, r.json()["leaderboards"]))
+            except:
+                pass
         return r
 
     def Get_Agent(self):
@@ -606,8 +597,10 @@ class SpaceTraders:
             system = System(d)
             systems.append(system)
             self.systems[system.symbol] = system
-        with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM, systems))
+            
+        if self.use_db:
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM, systems))
         return systems, Meta(j["meta"])
 
     def Init_Systems(self):
@@ -618,19 +611,17 @@ class SpaceTraders:
             with open("systems.json", "w") as f:
                 f.write(r.text)
             j = r.json()
-            with self.db_lock:
-                self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SYSTEM, [
-                              System(system) for system in j])
-                )
+            
+            if self.use_db:
+                with self.db_lock:
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM, [System(system) for system in j]))
         else:
             with open("systems.json", "r") as f:
                 j = json.load(f)
-            with self.db_lock:
-                self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SYSTEM, [
-                              System(system) for system in j])
-                )
+            
+            if self.use_db:
+                with self.db_lock:
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM, [System(system) for system in j]))
         for s in j:
             system = System(s)
             self.systems[system.symbol] = system
@@ -645,8 +636,9 @@ class SpaceTraders:
             return  # TODO raise error
         system = System(data)
         self.systems[systemSymbol] = system
-        with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM, [system]))
+        if self.use_db:
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SYSTEM, [system]))
         return system
 
     def Get_Waypoints(self, systemSymbol, page=1, limit=20):
@@ -664,12 +656,11 @@ class SpaceTraders:
             w = Waypoint(d)
             self.waypoints[w.symbol] = w
             way.append(w.symbol)
-        if len(way) > 0:
-            with self.db_lock:
-                self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.WAYPOINT, [
-                              self.waypoints[w] for w in way])
-                )
+        if self.use_db:
+            if len(way) > 0:
+                with self.db_lock:
+                    self.db_queue.append(
+                        Queue_Obj(Queue_Obj_Type.WAYPOINT, [self.waypoints[w] for w in way]))
         return (way, meta)
 
     def Get_Waypoint(self, waypointSymbol):
@@ -682,8 +673,9 @@ class SpaceTraders:
             return  # TODO raise error
         w = Waypoint(data)
         self.waypoints[w.symbol] = w
-        with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.WAYPOINT, [w]))
+        if self.use_db:
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.WAYPOINT, [w]))
         return w
 
     def Get_Market(self, waypointSymbol):
@@ -696,8 +688,9 @@ class SpaceTraders:
             return  # TODO raise error
         market = Market(data)
         self.markets[waypointSymbol] = market
-        with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.MARKET, market))
+        if self.use_db:
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.MARKET, market))
         return market
 
     def Get_Shipyard(self, waypointSymbol):
@@ -711,8 +704,9 @@ class SpaceTraders:
         yard = Shipyard(data)
         self.shipyards[waypointSymbol] = yard
         # TODO add ship listings when at waypoint
-        with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPYARD, yard))
+        if self.use_db:
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPYARD, yard))
         return yard
 
     def Get_JumpGate(self, waypointSymbol):
@@ -744,8 +738,9 @@ class SpaceTraders:
             contract = Contract(d)
             contracts.append(contract)
             self.contracts[contract.id] = contract
-        # with self.db_lock:
-        #     self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
+        # if self.use_db:
+            # with self.db_lock:
+            #     self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
         return (contracts, meta)
 
     def Get_Contract(self, contractId):
@@ -759,8 +754,9 @@ class SpaceTraders:
             return  # TODO raise error
         contract = Contract(data)
         self.contracts[contract.id] = contract
-        # with self.db_lock:
-        #     self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
+        # if self.use_db:
+            # with self.db_lock:
+            #     self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
         return contract
 
     def Accept_Contract(self, contractId):
@@ -774,8 +770,9 @@ class SpaceTraders:
             return  # TODO raise error
         contract = Contract(data)
         self.contracts[contract.id] = contract
-        # with self.db_lock:
-        #     self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
+        # if self.use_db:
+            # with self.db_lock:
+            #     self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
         return contract
 
     def Deliver_Contract(self, contractId, shipSymbol, tradeSymbol, units):
@@ -796,12 +793,10 @@ class SpaceTraders:
         cargo = ShipCargo(data["cargo"])
         if shipSymbol in self.ships:
             self.ships[shipSymbol].cargo = cargo
-            with self.db_lock:
-                self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SHIPCARGO,
-                              [self.ships[shipSymbol]])
-                )
-                # self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
+            if self.use_db:
+                with self.db_lock:
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPCARGO, [self.ships[shipSymbol]]))
+                    # self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
         return contract
 
     def Fulfill_Contract(self, contractId):
@@ -815,8 +810,9 @@ class SpaceTraders:
             return  # TODO raise error
         contract = Contract(data)
         self.contracts[contract.id] = contract
-        # with self.db_lock:
-        #     self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
+        # if self.use_db:
+            # with self.db_lock:
+            #     self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
         return contract
 
     # endregion
@@ -835,8 +831,9 @@ class SpaceTraders:
             faction = Faction(d)
             factions.append(faction)
             self.factions[faction.symbol] = faction
-        with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.Faction, factions))
+        if self.use_db:
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.Faction, factions))
         return (factions, meta)
 
     def Get_Faction(self, factionSymbol):
@@ -850,8 +847,9 @@ class SpaceTraders:
 
         faction = Faction(data)
         self.factions[faction.symbol] = faction
-        with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.Faction, [faction]))
+        if self.use_db:
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.Faction, [faction]))
         return faction
 
     # endregion
@@ -867,10 +865,9 @@ class SpaceTraders:
         for d in data:
             ship = Ship(d)
             self.ships[ship.symbol] = ship
-        with self.db_lock:
-            self.db_queue.append(
-                Queue_Obj(Queue_Obj_Type.SHIP, [Ship(ship) for ship in data])
-            )
+        if self.use_db:
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP, [Ship(ship) for ship in data]))
         return self.ships, Meta(j["meta"])
 
     def Purchase_Ship(self, shipType, waypointSymbol):
@@ -884,8 +881,9 @@ class SpaceTraders:
             return  # TODO raise error
         self.agent = Agent(data["agent"])
         ship = Ship(data["ship"])
-        with self.db_lock:
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP, [ship]))
+        if self.use_db:
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP, [ship]))
         self.ships[ship.symbol] = ship
         return ship
 
@@ -897,9 +895,9 @@ class SpaceTraders:
         if data == None:
             return  # TODO raise error
         self.ships[shipSymbol] = Ship(data)
-        with self.db_lock:
-            self.db_queue.append(
-                Queue_Obj(Queue_Obj_Type.SHIP, self.ships[shipSymbol]))
+        if self.use_db:
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP, self.ships[shipSymbol]))
         return self.ships[shipSymbol]
 
     def Get_Cargo(self, shipSymbol):
@@ -912,10 +910,9 @@ class SpaceTraders:
         cargo = ShipCargo(data)
         if shipSymbol in self.ships:
             self.ships[shipSymbol].cargo = cargo
-            with self.db_lock:
-                self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SHIPCARGO, self.ships[shipSymbol])
-                )
+            if self.use_db:
+                with self.db_lock:
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPCARGO, self.ships[shipSymbol]))
         return cargo
 
     def Orbit(self, shipSymbol):
@@ -928,10 +925,9 @@ class SpaceTraders:
         shipnav = ShipNav(data["nav"])
         if shipSymbol in self.ships:
             self.ships[shipSymbol].nav = shipnav
-            with self.db_lock:
-                self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SHIPNAV, self.ships[shipSymbol])
-                )
+            if self.use_db:
+                with self.db_lock:
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV, self.ships[shipSymbol]))
         return self.ships[shipSymbol].nav
 
     # refine
@@ -946,9 +942,10 @@ class SpaceTraders:
         waypoint = Waypoint(data["waypoint"])
 
         self.waypoints[waypoint.symbol] = waypoint
-        with self.db_lock:
-            self.db_queue.append(
-                Queue_Obj(Queue_Obj_Type.WAYPOINT, [waypoint]))
+        if self.use_db:
+            with self.db_lock:
+                self.db_queue.append(
+                    Queue_Obj(Queue_Obj_Type.WAYPOINT, [waypoint]))
         return (chart, waypoint)
 
     def Get_Cooldown(self, shipSymbol):
@@ -975,10 +972,9 @@ class SpaceTraders:
         shipnav = ShipNav(data["nav"])
         if shipSymbol in self.ships:
             self.ships[shipSymbol].nav = shipnav
-            with self.db_lock:
-                self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SHIPNAV, self.ships[shipSymbol])
-                )
+            if self.use_db:
+                with self.db_lock:
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV, self.ships[shipSymbol]))
         return self.ships[shipSymbol].nav
 
     def Create_Survey(self, shipSymbol):
@@ -998,7 +994,9 @@ class SpaceTraders:
             # TODO add survey to database
             with self.survey_lock:
                 self.surveys[survey.signature] = survey
-        # self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol])) # TODO cooldown to db
+        
+        # if self.use_db:
+            # self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol])) # TODO cooldown to db
         return (surveys, cooldown)
 
     def Extract(self, shipSymbol, survey: Survey = None):
@@ -1022,11 +1020,9 @@ class SpaceTraders:
         cargo = ShipCargo(data["cargo"])
         if shipSymbol in self.ships:
             self.ships[shipSymbol].cargo = cargo
-            with self.db_lock:
-                self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SHIPCARGO,
-                              [self.ships[shipSymbol]])
-                )
+            if self.use_db:
+                with self.db_lock:
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPCARGO, [self.ships[shipSymbol]]))
         # self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol])) # TODO cooldown to db
         return (extraction, cargo, cooldown)
     # jettison
@@ -1040,8 +1036,8 @@ class SpaceTraders:
             return  # TODO raise error
         cooldown = Cooldown(data)
         self.cooldowns[shipSymbol] = cooldown
-
-        # self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol])) # TODO cooldown to db
+        # if self.use_db:
+            # self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol])) # TODO cooldown to db
         return cooldown
 
     def Navigate(self, shipSymbol, waypointSymbol):
@@ -1056,13 +1052,10 @@ class SpaceTraders:
         if shipSymbol in self.ships:
             self.ships[shipSymbol].nav = shipnav
             self.ships[shipSymbol].fuel = shipfuel
-            with self.db_lock:
-                self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SHIPNAV, self.ships[shipSymbol])
-                )
-                self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SHIPFUEL, self.ships[shipSymbol])
-                )
+            if self.use_db:
+                with self.db_lock:
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV, self.ships[shipSymbol]))
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL, self.ships[shipSymbol]))
         return (shipnav, shipfuel)
 
     def Warp(self, shipSymbol, waypointSymbol):
@@ -1077,13 +1070,10 @@ class SpaceTraders:
         if shipSymbol in self.ships:
             self.ships[shipSymbol].nav = shipnav
             self.ships[shipSymbol].fuel = shipfuel
-            with self.db_lock:
-                self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SHIPNAV, self.ships[shipSymbol])
-                )
-                self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SHIPFUEL, self.ships[shipSymbol])
-                )
+            if self.use_db:
+                with self.db_lock:
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPNAV, self.ships[shipSymbol]))
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL, self.ships[shipSymbol]))
         return (shipnav, shipfuel)
 
     def Sell(self, shipSymbol, symbol, units):
@@ -1098,11 +1088,9 @@ class SpaceTraders:
         self.worth[transaction.tradeSymbol]=transaction.pricePerUnit
         if shipSymbol in self.ships:
             self.ships[shipSymbol].cargo = ShipCargo(data["cargo"])
-            with self.db_lock:
-                self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SHIPCARGO,
-                              [self.ships[shipSymbol]])
-                )
+            if self.use_db:
+                with self.db_lock:
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPCARGO, [self.ships[shipSymbol]]))
         return (self.agent, self.ships[shipSymbol].cargo, transaction)
 
     # scan systems
@@ -1120,10 +1108,9 @@ class SpaceTraders:
         transaction = MarketTransaction(data["transaction"])
         if shipSymbol in self.ships:
             self.ships[shipSymbol].fuel = fuel
-            with self.db_lock:
-                self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SHIPFUEL, self.ships[shipSymbol])
-                )
+            if self.use_db:
+                with self.db_lock:
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL, self.ships[shipSymbol]))
         return (self.agent, fuel, transaction)
 
     def Purchase(self, shipSymbol, symbol, units):
@@ -1137,11 +1124,9 @@ class SpaceTraders:
         transaction = MarketTransaction(data["transaction"])
         if shipSymbol in self.ships:
             self.ships[shipSymbol].cargo = ShipCargo(data["cargo"])
-            with self.db_lock:
-                self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SHIPCARGO,
-                              [self.ships[shipSymbol]])
-                )
+            if self.use_db:
+                with self.db_lock:
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPCARGO, [self.ships[shipSymbol]]))
         return (self.agent, self.ships[shipSymbol].cargo, transaction)
 
     def Transfer(self, shipSymbol, symbol, units, recvShipSymbol):
@@ -1159,11 +1144,9 @@ class SpaceTraders:
         cargo = ShipCargo(data["cargo"])
         if shipSymbol in self.ships:
             self.ships[shipSymbol].cargo = cargo
-            with self.db_lock:
-                self.db_queue.append(
-                    Queue_Obj(Queue_Obj_Type.SHIPCARGO,
-                              [self.ships[shipSymbol]])
-                )
+            if self.use_db:
+                with self.db_lock:
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPCARGO, [self.ships[shipSymbol]]))
         return cargo
 
     # endregion
@@ -1264,5 +1247,7 @@ if __name__ == "__main__":
     # pprint(st.Get_Shipyard("X1-AC10-39507F"))
     # st.Init_Systems()
     print("done")
-    while len(st.db_queue) > 0:
-        time.sleep(3)
+    
+    if st.use_db:
+        while len(st.db_queue) > 0:
+            time.sleep(3)
