@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 from dataclasses import dataclass
 from enum import Enum
 from enums import Factions, WaypointType
+from feba_ratelimit import BurstyLimiter, Limiter
 from objects import (
     Agent,
     Chart,
@@ -468,8 +469,9 @@ class SpaceTraders:
         self.logger.debug(f"{r.request.method} {r.request.url} {r.status_code} {r.text}")
         return r
 
-    @ratelimit.sleep_and_retry
-    @ratelimit.limits(calls=3, period=1)
+    # @ratelimit.sleep_and_retry
+    # @ratelimit.limits(calls=3, period=1)
+    @BurstyLimiter(Limiter(2,1),Limiter(10,10))
     def my_req(self, url, method, data=None, json=None):
         try:
             r = self.req_and_log(url, method, data, json)
@@ -485,6 +487,7 @@ class SpaceTraders:
         # TODO add monitoring, measure time of the requests and send them to the db aswell
 
         return r
+    
     def reset_connection(self):
         self.session = requests.session()
         if self.token!=None:
