@@ -94,7 +94,7 @@ class SpaceTraders:
     token:str
     # endregion
 
-    def __init__(self,db=True) -> None:
+    def __init__(self,use_db=True) -> None:
         load_dotenv(".env")
 
         # region inits
@@ -108,7 +108,6 @@ class SpaceTraders:
         self.jumpgates = {}
         self.cooldowns = {}
         self.surveys = {}
-        self.db_queue = []
         self.agent = Agent()
         self.token = None
         # endregion
@@ -131,7 +130,7 @@ class SpaceTraders:
         self.logger.addHandler(ch)
         # endregion
         # region db
-        self.use_db=db
+        self.use_db=use_db
         if self.use_db:
             self.db_lock = threading.Lock()
             self.db_queue = []
