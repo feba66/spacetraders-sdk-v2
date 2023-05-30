@@ -460,6 +460,7 @@ class SpaceTraders:
             else:
                 time.sleep(0.01)
 
+    @BurstyLimiter(Limiter(2,1),Limiter(10,10))
     def req_and_log(self, url, method, data=None, json=None):
         # before = time.perf_counter()
         r = self.session.request(method, self.SERVER_URL + url, data=data, json=json)
@@ -471,7 +472,6 @@ class SpaceTraders:
 
     # @ratelimit.sleep_and_retry
     # @ratelimit.limits(calls=3, period=1)
-    @BurstyLimiter(Limiter(2,1),Limiter(10,10))
     def my_req(self, url, method, data=None, json=None):
         try:
             r = self.req_and_log(url, method, data, json)
