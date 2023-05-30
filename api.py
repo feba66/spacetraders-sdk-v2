@@ -479,11 +479,13 @@ class SpaceTraders:
                     r = self.req_and_log(url, method, data, json)
             return r
         except RemoteDisconnected as e:
-            self.reset_connection()
+            pass
         except ProtocolError as e:
-            self.reset_connection()
+            pass
         except ConnectionError as e:
-            self.reset_connection()
+            pass
+        self.reset_connection()
+        return self.my_req(url, method, data, json)
         # TODO add monitoring, measure time of the requests and send them to the db aswell
 
 
