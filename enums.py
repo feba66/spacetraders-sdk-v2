@@ -7,6 +7,8 @@ class myEnum(Enum):
 
     def __str__(self) -> str:
         return self.name
+    def name_pg(self) -> str:
+        return f"'{self.name}'"
 
 
 # region Enums
