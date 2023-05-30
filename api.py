@@ -91,6 +91,7 @@ class SpaceTraders:
     cooldowns: dict[str, Cooldown]
     surveys: dict[str, Survey]
     survey_lock = threading.Lock()
+    req_lock= threading.Semaphore(2)
 
     token:str
     # endregion
@@ -460,6 +461,7 @@ class SpaceTraders:
             else:
                 time.sleep(0.01)
 
+    @BurstyLimiter(Limiter(2,1.05),Limiter(10,10.5))
     def req_and_log(self, url, method, data=None, json=None):
         # before = time.perf_counter()
         r = self.session.request(method, self.SERVER_URL + url, data=data, json=json)
@@ -471,13 +473,13 @@ class SpaceTraders:
 
     # @ratelimit.sleep_and_retry
     # @ratelimit.limits(calls=3, period=1)
-    @BurstyLimiter(Limiter(2,1),Limiter(10,10))
     def my_req(self, url, method, data=None, json=None):
         try:
-            r = self.req_and_log(url, method, data, json)
-            while r.status_code == 429:
-                time.sleep(0.5)
+            with self.req_lock:
                 r = self.req_and_log(url, method, data, json)
+                while r.status_code == 429:
+                    r = self.req_and_log(url, method, data, json)
+            return r
         except RemoteDisconnected as e:
             self.reset_connection()
         except ProtocolError as e:
@@ -486,13 +488,12 @@ class SpaceTraders:
             self.reset_connection()
         # TODO add monitoring, measure time of the requests and send them to the db aswell
 
-        return r
-    
+
     def reset_connection(self):
+        time.sleep(5)
         self.session = requests.session()
         if self.token!=None:
             self.Login(self.token)
-        time.sleep(5)
     def Login(self, token):
         self.token=token
         self.session.headers.update({"Authorization": "Bearer " + token})
@@ -1012,7 +1013,8 @@ class SpaceTraders:
         if data == None:
             error = Error(j["error"])
             if error.code in [4221,4224]:
-                self.surveys.pop(survey.signature)
+                if survey.signature in self.surveys:
+                    self.surveys.pop(survey.signature)
                 return (None,None,None)
             else:
                 raise Exception(j)  # TODO raise error
