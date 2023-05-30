@@ -6,7 +6,6 @@ from math import ceil
 import threading
 import time
 import psycopg2
-import ratelimit
 import logging
 import requests
 import json
@@ -15,6 +14,7 @@ from pprint import pprint
 from dotenv import load_dotenv
 from dataclasses import dataclass
 from enum import Enum
+from constants import FORMAT_STR
 from enums import Factions, WaypointType
 from feba_ratelimit import BurstyLimiter, Limiter
 from objects import (
@@ -61,7 +61,7 @@ class Queue_Obj:
 
 
 class SpaceTraders:
-    FORMAT_STR = "%Y-%m-%dT%H:%M:%S.%fZ"
+    
     SERVER_URL = "https://api.spacetraders.io/v2"
 
     worth = {"ALUMINUM_ORE": 40, "AMMONIA_ICE": 26, "COPPER_ORE": 50, "DIAMONDS": 3454, "FUEL": 234, "GOLD_ORE": 57,
@@ -246,9 +246,7 @@ class SpaceTraders:
                                         x.purchasePrice,
                                         x.sellPrice,
                                         x.tradeVolume,
-                                        datetime.strftime(
-                                            datetime.utcnow(), self.FORMAT_STR
-                                        ),
+                                        datetime.strftime(datetime.utcnow(), FORMAT_STR),
                                     ]
                                 )
                             self.cur.execute(
@@ -405,7 +403,7 @@ class SpaceTraders:
                                     c["agentSymbol"],
                                     c["credits"],
                                     datetime.strftime(
-                                        datetime.utcnow(), self.FORMAT_STR
+                                        datetime.utcnow(), FORMAT_STR
                                     ),
                                 ]
                             )
@@ -423,7 +421,7 @@ class SpaceTraders:
                                         c["agentSymbol"],
                                         c["chartCount"],
                                         datetime.strftime(
-                                            datetime.utcnow(), self.FORMAT_STR
+                                            datetime.utcnow(), FORMAT_STR
                                         ),
                                     ]
                                 )
@@ -499,7 +497,7 @@ class SpaceTraders:
 
     # region helpers
     def parse_time(self, tstr: str):
-        return datetime.strptime(tstr, self.FORMAT_STR)
+        return datetime.strptime(tstr, FORMAT_STR)
 
     def get_time_diff(self, big: datetime, small: datetime):
         return (big - small).total_seconds()
@@ -954,7 +952,7 @@ class SpaceTraders:
         path = f"/my/ships/{shipSymbol}/cooldown"
         r = self.my_req(path, "get")
         if r.status_code==204:
-            return Cooldown({"remainingSeconds":0,"totalSeconds":0,"expiration":datetime.strftime(datetime.utcnow(),self.FORMAT_STR),"shipSymbol":shipSymbol})
+            return Cooldown({"remainingSeconds":0,"totalSeconds":0,"expiration":datetime.strftime(datetime.utcnow(),FORMAT_STR),"shipSymbol":shipSymbol})
         j = r.json()
         data = j["data"] if "data" in j else None
         if data == None:
