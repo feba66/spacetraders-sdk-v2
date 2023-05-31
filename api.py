@@ -52,6 +52,7 @@ class Queue_Obj_Type(Enum):
     SHIPFUEL = 9
     SHIPCARGO = 10
     FACTION = 11
+    REQUEST_METRIC = 12
 
 
 @dataclass
@@ -158,16 +159,17 @@ class SpaceTraders:
         self.cur.execute("CREATE TABLE IF NOT EXISTS transactions (WAYPOINTSYMBOL varchar, SHIPSYMBOL varchar, TRADESYMBOL varchar, TYPE varchar, UNITS integer, PRICEPERUNIT integer, TOTALPRICE integer, timestamp varchar, PRIMARY KEY (WAYPOINTSYMBOL,TRADESYMBOL,SHIPSYMBOL, timestamp));")
 
         # region reworked tables
-        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPS (SYMBOL CHARACTER varying NOT NULL, faction CHARACTER varying, ROLE CHARACTER varying, FRAME CHARACTER varying,  ENGINE CHARACTER varying,  SPEED CHARACTER varying,  MODULES CHARACTER varying[],  MOUNTS CHARACTER varying[],  cargo_capacity integer, PRIMARY KEY (SYMBOL));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPNAVS(SYMBOL CHARACTER varying NOT NULL, WAYPOINTSYMBOL CHARACTER varying, DEPARTURE CHARACTER varying, DESTINATION CHARACTER varying, ARRIVAL CHARACTER varying, DEPARTURETIME CHARACTER varying, STATUS CHARACTER varying, FLIGHTMODE CHARACTER varying, PRIMARY KEY (SYMBOL));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPCARGOS (SYMBOL CHARACTER varying, GOOD CHARACTER varying, UNITS integer, PRIMARY KEY (SYMBOL, GOOD));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPFUEL (SYMBOL CHARACTER varying, FUEL integer, CAPACITY integer, PRIMARY KEY (SYMBOL));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPCONSUMTION (SYMBOL CHARACTER varying, AMOUNT integer, DEPARTEDFROM CHARACTER varying, DESTINATION CHARACTER varying, FLIGHTMODE CHARACTER varying, FLIGHTTIME integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (SYMBOL, TIMESTAMP));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS CREDITLEADERBOARD (AGENTSYMBOL CHARACTER varying, CREDITS integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS CHARTLEADERBOARD (AGENTSYMBOL CHARACTER varying, CHARTCOUNT integer, TIMESTAMP CHARACTER varying, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS FACTIONS (SYMBOL CHARACTER varying NOT NULL, name CHARACTER varying, description CHARACTER varying, headquarters CHARACTER varying,  traits CHARACTER varying[], PRIMARY KEY (SYMBOL));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS SURVEYS (signature CHARACTER varying,symbol CHARACTER varying,deposits CHARACTER varying[],expiration CHARACTER varying,size CHARACTER varying,timestamp CHARACTER varying,PRIMARY KEY (signature))")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS EXTRACTIONS (shipSymbol CHARACTER varying,symbol CHARACTER varying,units CHARACTER varying[],timestamp CHARACTER varying, PRIMARY KEY (shipSymbol,timestamp))")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPS (SYMBOL varchar NOT NULL, faction varchar, ROLE varchar, FRAME varchar,  ENGINE varchar,  SPEED varchar,  MODULES varchar[],  MOUNTS varchar[],  cargo_capacity integer, PRIMARY KEY (SYMBOL));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPNAVS(SYMBOL varchar NOT NULL, WAYPOINTSYMBOL varchar, DEPARTURE varchar, DESTINATION varchar, ARRIVAL varchar, DEPARTURETIME varchar, STATUS varchar, FLIGHTMODE varchar, PRIMARY KEY (SYMBOL));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPCARGOS (SYMBOL varchar, GOOD varchar, UNITS integer, PRIMARY KEY (SYMBOL, GOOD));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPFUEL (SYMBOL varchar, FUEL integer, CAPACITY integer, PRIMARY KEY (SYMBOL));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPCONSUMTION (SYMBOL varchar, AMOUNT integer, DEPARTEDFROM varchar, DESTINATION varchar, FLIGHTMODE varchar, FLIGHTTIME integer, TIMESTAMP varchar, PRIMARY KEY (SYMBOL, TIMESTAMP));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS CREDITLEADERBOARD (AGENTSYMBOL varchar, CREDITS integer, TIMESTAMP varchar, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS CHARTLEADERBOARD (AGENTSYMBOL varchar, CHARTCOUNT integer, TIMESTAMP varchar, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS FACTIONS (SYMBOL varchar NOT NULL, name varchar, description varchar, headquarters varchar,  traits varchar[], PRIMARY KEY (SYMBOL));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS SURVEYS (signature varchar,symbol varchar,deposits varchar[],expiration varchar,size varchar,timestamp varchar,PRIMARY KEY (signature))")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS EXTRACTIONS (shipSymbol varchar,symbol varchar,units varchar[],timestamp varchar, PRIMARY KEY (shipSymbol,timestamp))")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS public.requests(before timestamp without time zone,after timestamp without time zone,duration numeric,method varchar,endpoint varchar,status_code integer,error_code integer)")
         self.conn.commit()
         # endregion
 
@@ -260,6 +262,15 @@ class SpaceTraders:
                                 TRADEVOLUME = excluded.TRADEVOLUME""",
                                 list(temp),
                             )
+                            self.cur.execute(f"""INSERT INTO prices2 (WAYPOINTSYMBOL,symbol,SUPPLY,PURCHASE,SELL,TRADEVOLUME,TIMESTAMP)
+                            VALUES {','.join([f'(%s, %s, %s, %s, %s, %s, %s)' for _ in range(int(len(temp)/7))])} 
+                            ON CONFLICT (WAYPOINTSYMBOL, symbol) DO UPDATE 
+                            SET SUPPLY = excluded.SUPPLY,
+                                PURCHASE = excluded.PURCHASE,
+                                SELL = excluded.SELL,
+                                TRADEVOLUME = excluded.TRADEVOLUME,
+                                TIMESTAMP = EXCLUDED.TIMESTAMP""",
+                                list(temp))
                         self.conn.commit()
                     elif q_obj.type == Queue_Obj_Type.SHIPYARD:
                         yard: list[Shipyard] = q_obj.data
@@ -453,18 +464,34 @@ class SpaceTraders:
                             list(temp),
                         )
                         self.conn.commit()
+                    elif q_obj.type == Queue_Obj_Type.REQUEST_METRIC:
+                        data: tuple = q_obj.data
 
+                        self.cur.execute(
+                            f"""INSERT INTO REQUESTS (BEFORE,AFTER,DURATION,METHOD,ENDPOINT,STATUS_CODE,ERROR_CODE)
+                                VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                            list(data),
+                        )
+                        self.conn.commit()
                 # TODO add the msg to db
                 # TODO add the queue-ing to all functions
             else:
                 time.sleep(0.01)
 
     @BurstyLimiter(Limiter(2,1.05),Limiter(10,10.5))
-    def req_and_log(self, url, method, data=None, json=None):
-        # before = time.perf_counter()
+    def req_and_log(self, url:str, method:str, data=None, json=None):
+        # before after duration method endpoint status_code error_code
+        before = datetime.utcnow()
         r = self.session.request(method, self.SERVER_URL + url, data=data, json=json)
-        # after = time.perf_counter()
-
+        after = datetime.utcnow()
+        duration = (after-before).total_seconds()
+        with self.db_lock:
+            if len(r.text) > 0:
+                j = r.json()
+            else:
+                j= None
+            self.db_queue.append(Queue_Obj(Queue_Obj_Type.REQUEST_METRIC, (before,after,duration,method,url,r.status_code,(j["error"]["code"] if "error" in j else None) if j else None)))
+        
         self.logger.info(f"{r.request.method} {r.request.url} {r.status_code}")
         self.logger.debug(f"{r.request.method} {r.request.url} {r.status_code} {r.text}")
         return r
