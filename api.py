@@ -11,7 +11,7 @@ import requests
 import json
 import os
 from pprint import pprint
-from dotenv import load_dotenv
+from dotenv import load_dotenv,find_dotenv
 from dataclasses import dataclass
 from enum import Enum
 from constants import FORMAT_STR
@@ -97,7 +97,7 @@ class SpaceTraders:
     # endregion
 
     def __init__(self,use_db=True) -> None:
-        load_dotenv(".env")
+        load_dotenv(find_dotenv(".env"))
 
         # region inits
         self.session = requests.session()
@@ -1185,7 +1185,8 @@ if __name__ == "__main__":
     # nav, fuel = st.Navigate(ship.symbol, "X1-UY52-72325C")
     # st.sleep_till(nav)
     # st.Get_Shipyard("X1-UY52-72027D")
-    # gate = st.Get_JumpGate("X1-AC10-73119Z")
+    gate = st.Get_JumpGate("X1-UY52-72027D")
+    exit()
     # pprint(gate.connectedSystems[0:10])
     # wps,_ = st.Get_Waypoints("X1-SR51")
     # warpGoal = ""
