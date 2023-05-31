@@ -20,6 +20,10 @@ py api.py
 - [ ] add extractions to database
 - [ ] add transactions to database
 
+## Generator 
+- implement enums
+- implement jsons like ShipCondition
+
 ## Documentation for API Endpoints
 
 Class          | HTTP request  | Description   | Implemented
