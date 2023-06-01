@@ -53,6 +53,7 @@ class Queue_Obj_Type(Enum):
     SHIPCARGO = 10
     FACTION = 11
     REQUEST_METRIC = 12
+    TRANSACTION = 13
 
 
 @dataclass
@@ -169,7 +170,9 @@ class SpaceTraders:
         self.cur.execute("CREATE TABLE IF NOT EXISTS FACTIONS (SYMBOL varchar NOT NULL, name varchar, description varchar, headquarters varchar,  traits varchar[], PRIMARY KEY (SYMBOL));")
         self.cur.execute("CREATE TABLE IF NOT EXISTS SURVEYS (signature varchar,symbol varchar,deposits varchar[],expiration varchar,size varchar,timestamp varchar,PRIMARY KEY (signature))")
         self.cur.execute("CREATE TABLE IF NOT EXISTS EXTRACTIONS (shipSymbol varchar,symbol varchar,units varchar[],timestamp varchar, PRIMARY KEY (shipSymbol,timestamp))")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS public.requests(before timestamp without time zone,after timestamp without time zone,duration numeric,method varchar,endpoint varchar,status_code integer,error_code integer)")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS requests(before timestamp without time zone,after timestamp without time zone,duration numeric,method varchar,endpoint varchar,status_code integer,error_code integer)")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS credits(time timestamp without time zone,agent varchar,credits integer)")
+        
         self.conn.commit()
         # endregion
 
@@ -473,6 +476,16 @@ class SpaceTraders:
                             list(data),
                         )
                         self.conn.commit()
+                    elif q_obj.type == Queue_Obj_Type.TRANSACTION:
+                        data: tuple = q_obj.data
+
+                        if len(data)>1:
+                            self.cur.execute(
+                                f"""INSERT INTO CREDITS (TIME,AGENT,CREDITS)
+                                    VALUES (%s,%s,%s)""",
+                                list(data[1]),
+                            )
+                        self.conn.commit()
                 # TODO add the msg to db
                 # TODO add the queue-ing to all functions
             else:
@@ -590,6 +603,9 @@ class SpaceTraders:
         token = data["token"]
         if login:
             self.Login(token)
+        if self.use_db:
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (None,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
         return token
 
     def Status(self):
@@ -612,6 +628,9 @@ class SpaceTraders:
         if data == None:
             return  # TODO raise error
         self.agent = Agent(data)
+        if self.use_db:
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (None,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
         return self.agent
 
     # region Systems
@@ -800,9 +819,10 @@ class SpaceTraders:
             return  # TODO raise error
         contract = Contract(data)
         self.contracts[contract.id] = contract
-        # if self.use_db:
-            # with self.db_lock:
-            #     self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
+        if self.use_db:
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (None,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
+        #     self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
         return contract
 
     def Deliver_Contract(self, contractId, shipSymbol, tradeSymbol, units):
@@ -840,8 +860,9 @@ class SpaceTraders:
             return  # TODO raise error
         contract = Contract(data)
         self.contracts[contract.id] = contract
-        # if self.use_db:
-            # with self.db_lock:
+        if self.use_db:
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (None,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
             #     self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
         return contract
 
@@ -914,6 +935,7 @@ class SpaceTraders:
         if self.use_db:
             with self.db_lock:
                 self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP, [ship]))
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (None,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
         self.ships[ship.symbol] = ship
         return ship
 
@@ -1122,6 +1144,7 @@ class SpaceTraders:
             if self.use_db:
                 with self.db_lock:
                     self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPCARGO, [self.ships[shipSymbol]]))
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (None,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
         return (self.agent, self.ships[shipSymbol].cargo, transaction)
 
     # scan systems
@@ -1142,6 +1165,7 @@ class SpaceTraders:
             if self.use_db:
                 with self.db_lock:
                     self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL, self.ships[shipSymbol]))
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (None,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
         return (self.agent, fuel, transaction)
 
     def Purchase(self, shipSymbol, symbol, units):
@@ -1158,6 +1182,7 @@ class SpaceTraders:
             if self.use_db:
                 with self.db_lock:
                     self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPCARGO, [self.ships[shipSymbol]]))
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (None,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
         return (self.agent, self.ships[shipSymbol].cargo, transaction)
 
     def Transfer(self, shipSymbol, symbol, units, recvShipSymbol):
