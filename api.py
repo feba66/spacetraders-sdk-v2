@@ -54,6 +54,8 @@ class Queue_Obj_Type(Enum):
     FACTION = 11
     REQUEST_METRIC = 12
     TRANSACTION = 13
+    EXTRACTION = 14
+    SURVEY = 15
 
 
 @dataclass
@@ -169,7 +171,7 @@ class SpaceTraders:
         self.cur.execute("CREATE TABLE IF NOT EXISTS CHARTLEADERBOARD (AGENTSYMBOL varchar, CHARTCOUNT integer, TIMESTAMP varchar, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
         self.cur.execute("CREATE TABLE IF NOT EXISTS FACTIONS (SYMBOL varchar NOT NULL, name varchar, description varchar, headquarters varchar,  traits varchar[], PRIMARY KEY (SYMBOL));")
         self.cur.execute("CREATE TABLE IF NOT EXISTS SURVEYS (signature varchar,symbol varchar,deposits varchar[],expiration varchar,size varchar,timestamp varchar,PRIMARY KEY (signature))")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS EXTRACTIONS (shipSymbol varchar,symbol varchar,units varchar[],timestamp varchar, PRIMARY KEY (shipSymbol,timestamp))")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS EXTRACTIONS (shipSymbol varchar,waypointsymbol varchar,symbol varchar,units integer, survey varchar, timestamp TIME)")
         self.cur.execute("CREATE TABLE IF NOT EXISTS requests(before timestamp without time zone,after timestamp without time zone,duration numeric,method varchar,endpoint varchar,status_code integer,error_code integer)")
         self.cur.execute("CREATE TABLE IF NOT EXISTS credits(time timestamp without time zone,agent varchar,credits integer)")
         
@@ -484,6 +486,16 @@ class SpaceTraders:
                                 f"""INSERT INTO CREDITS (TIME,AGENT,CREDITS)
                                     VALUES (%s,%s,%s)""",
                                 list(data[1]),
+                            )
+                        self.conn.commit()
+                    elif q_obj.type == Queue_Obj_Type.EXTRACTION:
+                        data: tuple = q_obj.data
+
+                        if len(data)>1:
+                            self.cur.execute(
+                                f"""INSERT INTO EXTRACTIONS (shipSymbol,waypointsymbol,symbol,units,survey,timestamp)
+                                    VALUES (%s,%s,%s,%s,%s,%s)""",
+                                list(data),
                             )
                         self.conn.commit()
                 # TODO add the msg to db
@@ -1074,8 +1086,10 @@ class SpaceTraders:
         if shipSymbol in self.ships:
             self.ships[shipSymbol].cargo = cargo
             if self.use_db:
-                with self.db_lock:
+                with self.db_lock: # (shipSymbol,symbol,units,survey,timestamp
                     self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPCARGO, [self.ships[shipSymbol]]))
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.EXTRACTION, (shipSymbol,self.ships[shipSymbol].nav.waypointSymbol if shipSymbol in self.ships else None,extraction.yield_.symbol,extraction.yield_.units,survey,datetime.utcnow())))
+                    
         # self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol])) # TODO cooldown to db
         return (extraction, cargo, cooldown)
     # jettison
