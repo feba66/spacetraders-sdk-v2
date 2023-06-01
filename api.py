@@ -170,8 +170,8 @@ class SpaceTraders:
         self.cur.execute("CREATE TABLE IF NOT EXISTS CREDITLEADERBOARD (AGENTSYMBOL varchar, CREDITS integer, TIMESTAMP varchar, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
         self.cur.execute("CREATE TABLE IF NOT EXISTS CHARTLEADERBOARD (AGENTSYMBOL varchar, CHARTCOUNT integer, TIMESTAMP varchar, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
         self.cur.execute("CREATE TABLE IF NOT EXISTS FACTIONS (SYMBOL varchar NOT NULL, name varchar, description varchar, headquarters varchar,  traits varchar[], PRIMARY KEY (SYMBOL));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS SURVEYS (signature varchar,symbol varchar,deposits varchar[],expiration varchar,size varchar,timestamp varchar,PRIMARY KEY (signature))")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS EXTRACTIONS (shipSymbol varchar,waypointsymbol varchar,symbol varchar,units integer, survey varchar, timestamp TIME)")
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS SURVEYS (signature varchar,symbol varchar,deposits varchar[],expiration varchar,size varchar,"timestamp" timestamp without time zone,PRIMARY KEY (signature))""")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS EXTRACTIONS (shipSymbol varchar,waypointsymbol varchar,symbol varchar,units integer, survey varchar, timestamp timestamp without time zone)")
         self.cur.execute("CREATE TABLE IF NOT EXISTS requests(before timestamp without time zone,after timestamp without time zone,duration numeric,method varchar,endpoint varchar,status_code integer,error_code integer)")
         self.cur.execute("CREATE TABLE IF NOT EXISTS credits(time timestamp without time zone,agent varchar,credits integer)")
         
@@ -496,6 +496,28 @@ class SpaceTraders:
                                 f"""INSERT INTO EXTRACTIONS (shipSymbol,waypointsymbol,symbol,units,survey,timestamp)
                                     VALUES (%s,%s,%s,%s,%s,%s)""",
                                 list(data),
+                            )
+                        self.conn.commit()
+                    elif q_obj.type == Queue_Obj_Type.SURVEY:
+                        data: list(Survey) = q_obj.data
+                        temp = []
+                        for s in data:
+                            s:Survey
+                            temp.extend(
+                                [
+                                    s.signature,
+                                    s.symbol,
+                                    [d.symbol for d in s.deposits],
+                                    datetime.strptime(s.expiration,FORMAT_STR),
+                                    s.size.name,
+                                    datetime.utcnow()
+                                ]
+                            )
+                        if len(temp)>1:
+                            self.cur.execute(
+                                f"""INSERT INTO SURVEYS (signature,symbol,deposits,expiration,size,timestamp)
+                                    VALUES {','.join([f'(%s, %s, %s, %s, %s, %s)' for _ in range(int(len(temp)/6))])}""",
+                                list(temp),
                             )
                         self.conn.commit()
                 # TODO add the msg to db
@@ -1059,8 +1081,10 @@ class SpaceTraders:
             with self.survey_lock:
                 self.surveys[survey.signature] = survey
         
-        # if self.use_db:
-            # self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol])) # TODO cooldown to db
+        if self.use_db:
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.SURVEY,surveys)) 
+            # TODO cooldown to db
         return (surveys, cooldown)
 
     def Extract(self, shipSymbol, survey: Survey = None):
@@ -1088,7 +1112,7 @@ class SpaceTraders:
             if self.use_db:
                 with self.db_lock: # (shipSymbol,symbol,units,survey,timestamp
                     self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPCARGO, [self.ships[shipSymbol]]))
-                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.EXTRACTION, (shipSymbol,self.ships[shipSymbol].nav.waypointSymbol if shipSymbol in self.ships else None,extraction.yield_.symbol,extraction.yield_.units,survey,datetime.utcnow())))
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.EXTRACTION, (shipSymbol,self.ships[shipSymbol].nav.waypointSymbol if shipSymbol in self.ships else None,extraction.yield_.symbol,extraction.yield_.units,survey.signature if survey else None,datetime.utcnow())))
                     
         # self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol])) # TODO cooldown to db
         return (extraction, cargo, cooldown)
