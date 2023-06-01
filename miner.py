@@ -14,35 +14,35 @@ def mine(st:SpaceTraders, ship:Ship):
             nav,_ = st.Navigate(ship.symbol,"X1-UY52-72325C")
         st.sleep_till(nav=nav)
     while True:
-        if random.randint(0,60) < 1:
-            st.Get_Market("X1-UY52-72325C")
+        # if random.randint(0,60) < 1:
+        #     st.Get_Market("X1-UY52-72325C")
         ship = st.ships[ship.symbol]
-        if cd!=None:
+        if cd!=None and st.time_till(cd.expiration) > 0:
             st.sleep_till(cooldown=cd)
-        surveys = st.sort_surveys_by_worth(st.get_surveys_for(ship.nav.waypointSymbol))
-        if len(surveys)<10:
-            if ship.nav.status != ShipNavStatus.IN_ORBIT:
-                st.Orbit(ship.symbol)
-            _,cd = st.Create_Survey(ship.symbol)
-        else:
-            if ship.cargo.units > 0:
-                for c in ship.cargo.inventory:
-                    if c.symbol != "ANTIMATTER":
-                        if ship.nav.status != ShipNavStatus.DOCKED:
-                            st.Dock(ship.symbol)
-                        st.Sell(ship.symbol,c.symbol,c.units)
-            ship = st.ships[ship.symbol]
-            if ship.nav.status != ShipNavStatus.IN_ORBIT:
-                st.Orbit(ship.symbol)
-            if surveys[0][0] in st.surveys:
-                extract,cargo,cd = st.Extract(ship.symbol,st.surveys[surveys[0][0]])
-            
-                ship = st.ships[ship.symbol]
-                if extract!=None:
+        # surveys = st.sort_surveys_by_worth(st.get_surveys_for(ship.nav.waypointSymbol))
+        # if len(surveys)<10:
+        #     if ship.nav.status != ShipNavStatus.IN_ORBIT:
+        #         st.Orbit(ship.symbol)
+        #     _,cd = st.Create_Survey(ship.symbol)
+        # else:
+        if ship.cargo.units > 0:
+            for c in ship.cargo.inventory:
+                if c.symbol != "ANTIMATTER":
                     if ship.nav.status != ShipNavStatus.DOCKED:
                         st.Dock(ship.symbol)
-                    st.Sell(ship.symbol,extract.yield_.symbol,extract.yield_.units)
-                
+                    st.Sell(ship.symbol,c.symbol,c.units)
+        ship = st.ships[ship.symbol]
+        if ship.nav.status != ShipNavStatus.IN_ORBIT:
+            st.Orbit(ship.symbol)
+        # if surveys[0][0] in st.surveys:
+        #     extract,cargo,cd = st.Extract(ship.symbol,st.surveys[surveys[0][0]])
+            extract,cargo,cd = st.Extract(ship.symbol)
+            
+            ship = st.ships[ship.symbol]
+            if extract!=None:
+                st.Dock(ship.symbol)
+                st.Sell(ship.symbol,extract.yield_.symbol,extract.yield_.units)
+
 
 threads = []
 running = True
