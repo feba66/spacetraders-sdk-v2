@@ -13,5 +13,5 @@ while True:
     if j!=old_j:
         pprint(j)
         old_j=j
-        time.sleep(30*60-30)
-    time.sleep(15)
+        time.sleep(30*60-10)
+    time.sleep(180)
