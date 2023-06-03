@@ -60,9 +60,10 @@ while len(st.db_queue) > 0 or running:
         for ship in list(st.ships.values()):
             if ship.symbol not in ships:
                 ships.append(ship.symbol)
-                t = threading.Thread(target=mine,name=ship.symbol,args=[st,ship])
-                t.daemon=True
-                t.start()
+                if ship.registration.role != "SURVEYOR":
+                    t = threading.Thread(target=mine,name=ship.symbol,args=[st,ship])
+                    t.daemon=True
+                    t.start()
         i=0
         # if st.agent.credits>=500000 and meta.total<30:
         #     st.Purchase_Ship("SHIP_ORE_HOUND","X1-UY52-72027D")
