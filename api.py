@@ -56,6 +56,7 @@ class Queue_Obj_Type(Enum):
     TRANSACTION = 13
     EXTRACTION = 14
     SURVEY = 15
+    SURVEY_DEPLETED = 16
 
 
 @dataclass
@@ -174,7 +175,7 @@ class SpaceTraders:
         self.cur.execute("CREATE TABLE IF NOT EXISTS EXTRACTIONS (shipSymbol varchar,waypointsymbol varchar,symbol varchar,units integer, survey varchar, timestamp timestamp without time zone)")
         self.cur.execute("CREATE TABLE IF NOT EXISTS requests(before timestamp without time zone,after timestamp without time zone,duration numeric,method varchar,endpoint varchar,status_code integer,error_code integer)")
         self.cur.execute("CREATE TABLE IF NOT EXISTS credits(time timestamp without time zone,agent varchar,credits integer)")
-        
+        self.cur.execute("CREATE TABLE IF NOT EXISTS surveysdepleted(time timestamp without time zone,surveyid varchar)")
         self.conn.commit()
         # endregion
 
@@ -518,6 +519,16 @@ class SpaceTraders:
                                 f"""INSERT INTO SURVEYS (signature,symbol,deposits,expiration,size,timestamp)
                                     VALUES {','.join([f'(%s, %s, %s, %s, %s, %s)' for _ in range(int(len(temp)/6))])}""",
                                 list(temp),
+                            )
+                        self.conn.commit()
+                    elif q_obj.type == Queue_Obj_Type.SURVEY_DEPLETED:
+                        data: tuple = q_obj.data
+
+                        if len(data)>1:
+                            self.cur.execute(
+                                f"""INSERT INTO surveysdepleted (time, surveyid)
+                                    VALUES (%s,%s)""",
+                                list(data),
                             )
                         self.conn.commit()
                 # TODO add the msg to db
@@ -1098,6 +1109,10 @@ class SpaceTraders:
         if data == None:
             error = Error(j["error"])
             if error.code in [4221,4224]:
+                if error.code == 4224:
+                    if self.use_db:
+                        with self.db_lock:
+                            self.db_queue.append(Queue_Obj(Queue_Obj_Type.SURVEY_DEPLETED,(datetime.utcnow(),survey.signature))) 
                 if survey.signature in self.surveys:
                     self.surveys.pop(survey.signature)
                 return (None,None,None)
