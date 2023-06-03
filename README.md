@@ -16,9 +16,12 @@ py api.py
 - [ ] add cooldown to database
 - [ ] add contracts to database
 - [x] add surveys to database
+- [ ] add which ship surveyed
 - [ ] add agent to database
 - [x] add extractions to database
 - [ ] add transactions to database
+- [ ] add new endpoints
+
 
 ## Generator 
 - implement enums
@@ -65,6 +68,9 @@ Class          | HTTP request  | Description   | Implemented
 | *Fleet*      | **post** /my/ships/{shipSymbol}/refuel | Refuel Ship | statekeeping & db
 | *Fleet*      | **post** /my/ships/{shipSymbol}/purchase | Purchase Cargo | statekeeping & db
 | *Fleet*      | **post** /my/ships/{shipSymbol}/transfer | Transfer Cargo | statekeeping & db
+| *Fleet*      | **get** /my/ships/{shipSymbol}/mounts | Get the mounts on a ship.
+| *Fleet*      | **post** /my/ships/{shipSymbol}/mounts | Install a mount on a ship.
+| *Fleet*      | **post** /my/ships/{shipSymbol}/mounts/remove | Remove a mount from a ship.
 | *Systems*    | **get** /systems | List Systems | statekeeping & db
 | *Systems*    | **get** /systems.json | Get all systems. |  statekeeping & db
 | *Systems*    | **get** /systems/{systemSymbol} | Get System | statekeeping & db

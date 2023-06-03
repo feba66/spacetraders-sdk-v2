@@ -57,6 +57,7 @@ class Queue_Obj_Type(Enum):
     EXTRACTION = 14
     SURVEY = 15
     SURVEY_DEPLETED = 16
+    RESET_WIPE = 17
 
 
 @dataclass
@@ -153,6 +154,7 @@ class SpaceTraders:
         port = os.getenv("PORT")
 
         self.conn = psycopg2.connect(dbname=db, user=user, password=os.getenv("DB_PASSWORD"), host=ip, port=port)
+        self.conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
         self.cur = self.conn.cursor()
 
         self.cur.execute("CREATE TABLE IF NOT EXISTS waypoints (systemSymbol varchar, symbol varchar PRIMARY KEY, type varchar, x integer,y integer,orbitals varchar[],traits varchar[],chart varchar,faction varchar);")
@@ -531,6 +533,20 @@ class SpaceTraders:
                                 list(data),
                             )
                         self.conn.commit()
+                    elif q_obj.type == Queue_Obj_Type.RESET_WIPE:
+                        
+                        self.conn.close()
+                        
+                        user = os.getenv("DB_USER")
+                        db = os.getenv("DB")
+                        ip = os.getenv("IP")
+                        port = os.getenv("PORT")
+
+                        tmp = psycopg2.connect(dbname="postgres", user=user, password=os.getenv("DB_PASSWORD"), host=ip, port=port)
+                        cur = tmp.cursor()
+                        
+                        cur.execute(f"""IALTER DATABASE test RENAME TO test_{datetime.utcnow().isoformat("YYYYMMDD")};""",)
+                        tmp.commit()
                 # TODO add the msg to db
                 # TODO add the queue-ing to all functions
             else:
@@ -1267,7 +1283,7 @@ if __name__ == "__main__":
     st = SpaceTraders()
     st.Status()
 
-    # pprint(st.Register("feba_66","ASTRO"))
+    # pprint(st.Register("feba66","ASTRO"))
     st.Login(os.getenv("TOKEN"))
     # pprint(st.Get_Contracts())
     # c_id = "clhmfp5wa0734s60dmss50pes"
@@ -1281,16 +1297,22 @@ if __name__ == "__main__":
     # st.Get_Market("X1-JP81-52264Z")
     # exit()
     st.Init_Systems()
+    # w = []
+    # for s in st.systems:
+    #     w.extend(st.systems[s].waypoints)
+    
     # st.Purchase_Ship("SHIP_ORE_HOUND","X1-UY52-72027D")
     st.Get_Ships()
-    ship = list(st.ships.values())[0]
+    st.Get_Waypoints("X1-AD50")
+    # ship = list(st.ships.values())[0]
 
-    # survey = Survey(json.loads('{"signature": "X1-UY52-72325C-B211DC","symbol": "X1-UY52-72325C","deposits": [{"symbol": "SILVER_ORE"},{"symbol": "ICE_WATER"},{"symbol": "ICE_WATER"}],"expiration": "2023-05-21T00:15:59.841Z","size": "MODERATE"}'))
-    # pprint(st.Extract(ship.symbol,survey))
-    # nav, fuel = st.Navigate(ship.symbol, "X1-UY52-72325C")
-    # st.sleep_till(nav)
-    # st.Get_Shipyard("X1-UY52-72027D")
-    gate = st.Get_JumpGate("X1-UY52-72027D")
+    # # survey = Survey(json.loads('{"signature": "X1-UY52-72325C-B211DC","symbol": "X1-UY52-72325C","deposits": [{"symbol": "SILVER_ORE"},{"symbol": "ICE_WATER"},{"symbol": "ICE_WATER"}],"expiration": "2023-05-21T00:15:59.841Z","size": "MODERATE"}'))
+    # # pprint(st.Extract(ship.symbol,survey))
+    # # nav, fuel = st.Navigate(ship.symbol, "X1-UY52-72325C")
+    # # st.sleep_till(nav)
+    # # st.Get_Shipyard("X1-UY52-72027D")
+    # gate = st.Get_JumpGate("X1-UY52-72027D")
+    time.sleep(1)
     exit()
     # pprint(gate.connectedSystems[0:10])
     # wps,_ = st.Get_Waypoints("X1-SR51")

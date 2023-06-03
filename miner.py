@@ -9,13 +9,13 @@ import random
 
 def mine(st:SpaceTraders, ship:Ship):
     cd = st.Get_Cooldown(ship.symbol)
-    if ship.nav.waypointSymbol != "X1-UY52-72325C":
+    if ship.nav.waypointSymbol != "X1-AD50-85905A":
         if ship.nav.status != ShipNavStatus.IN_TRANSIT:
-            nav,_ = st.Navigate(ship.symbol,"X1-UY52-72325C")
+            nav,_ = st.Navigate(ship.symbol,"X1-AD50-85905A")
         st.sleep_till(nav=nav)
     while True:
         # if random.randint(0,60) < 1:
-        #     st.Get_Market("X1-UY52-72325C")
+        #     st.Get_Market("X1-AD50-85905A")
         ship = st.ships[ship.symbol]
         if cd!=None and st.time_till(cd.expiration) > 0:
             st.sleep_till(cooldown=cd)
@@ -64,8 +64,8 @@ while len(st.db_queue) > 0 or running:
                 t.daemon=True
                 t.start()
         i=0
-        if st.agent.credits>=500000 and meta.total<30:
-            st.Purchase_Ship("SHIP_ORE_HOUND","X1-UY52-72027D")
+        # if st.agent.credits>=500000 and meta.total<30:
+        #     st.Purchase_Ship("SHIP_ORE_HOUND","X1-UY52-72027D")
     
     time.sleep(3)
     i+=1

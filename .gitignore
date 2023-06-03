@@ -1,8 +1,8 @@
 # spacetrader spezific
-systems.json
+systems.json*
 oldsystems
 gen
-
+*.log_*
 .vscode
 # Byte-compiled / optimized / DLL files
 __pycache__/
