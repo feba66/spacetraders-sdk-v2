@@ -20,7 +20,7 @@ def mine(st:SpaceTraders, ship:Ship):
         if cd!=None and st.time_till(cd.expiration) > 0:
             st.sleep_till(cooldown=cd)
         surveys = st.sort_surveys_by_worth(st.get_surveys_for(ship.nav.waypointSymbol))
-        if len(surveys)<10:
+        if len(surveys)<3:
             if ship.nav.status != ShipNavStatus.IN_ORBIT:
                 st.Orbit(ship.symbol)
             _,cd = st.Create_Survey(ship.symbol)
@@ -60,9 +60,10 @@ while len(st.db_queue) > 0 or running:
         for ship in list(st.ships.values()):
             if ship.symbol not in ships:
                 ships.append(ship.symbol)
-                t = threading.Thread(target=mine,name=ship.symbol,args=[st,ship])
-                t.daemon=True
-                t.start()
+                if ship.registration.role != "SURVEYOR" and ship.symbol != "FEBA66-1":
+                    t = threading.Thread(target=mine,name=ship.symbol,args=[st,ship])
+                    t.daemon=True
+                    t.start()
         i=0
         # if st.agent.credits>=500000 and meta.total<30:
         #     st.Purchase_Ship("SHIP_ORE_HOUND","X1-UY52-72027D")

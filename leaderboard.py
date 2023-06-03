@@ -5,7 +5,6 @@ from api import SpaceTraders
 
 
 st = SpaceTraders()
-st = SpaceTraders()
 old_j=json.loads(st.Status().text)
 time.sleep(5)
 while True:
