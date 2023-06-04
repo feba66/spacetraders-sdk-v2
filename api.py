@@ -1,5 +1,6 @@
 from datetime import datetime
 from http.client import RemoteDisconnected
+import math
 from urllib3.exceptions import ProtocolError
 from requests.exceptions import ConnectionError
 from math import ceil
@@ -646,12 +647,13 @@ class SpaceTraders:
         r = self.session.request(method, self.SERVER_URL + url, data=data, json=json)
         after = datetime.utcnow()
         duration = (after-before).total_seconds()
-        with self.db_lock:
-            if len(r.text) > 0:
-                j = r.json()
-            else:
-                j= None
-            self.db_queue.append(Queue_Obj(Queue_Obj_Type.REQUEST_METRIC, (before,after,duration,method,url,r.status_code,(j["error"]["code"] if "error" in j else None) if j else None)))
+        if self.use_db:
+            with self.db_lock:
+                if len(r.text) > 0:
+                    j = r.json()
+                else:
+                    j= None
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.REQUEST_METRIC, (before,after,duration,method,url,r.status_code,(j["error"]["code"] if "error" in j else None) if j else None)))
         
         self.logger.info(f"{r.request.method} {r.request.url} {r.status_code}")
         self.logger.debug(f"{r.request.method} {r.request.url} {r.status_code} {r.text}")
@@ -726,6 +728,21 @@ class SpaceTraders:
         sortd = [(k, self.get_survey_worth(self.surveys[k])) for k in surveys]
         sortd.sort(key=lambda x: x[1], reverse=True)
         return sortd
+    
+    def system_from_waypoint(self,wp):
+        return wp[0: wp.find("-", 4)]
+    
+    def get_systems_jumpgate(self,wp:str):
+        if wp.count("-")>1:
+            wp = self.system_from_waypoint(wp)
+        
+        for jg in self.jumpgates:
+            if jg.startswith(wp):
+                return jg
+    def get_dist(self,a:str,b:str):
+        a:Waypoint = self.waypoints[a]
+        b:Waypoint = self.waypoints[b]
+        return math.sqrt((a.x-b.x)**2+(a.y-b.y)**2)
     # endregion
 
     # region endpoints
