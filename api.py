@@ -15,7 +15,7 @@ from dotenv import load_dotenv,find_dotenv
 from dataclasses import dataclass
 from enum import Enum
 from constants import FORMAT_STR
-from enums import Factions, WaypointType
+from enums import Factions, MarketTradeGoodSupply, MarketTransactionType, ShipEngineType, ShipFrameType, ShipModuleType, ShipMountType, ShipNavFlightMode, ShipReactorType, ShipType, SystemType, TradeSymbol, WaypointType
 from feba_ratelimit import BurstyLimiter, Limiter
 from objects import (
     Agent,
@@ -159,7 +159,30 @@ class SpaceTraders:
         self.conn = psycopg2.connect(dbname=db, user=user, password=os.getenv("DB_PASSWORD"), host=ip, port=port)
         self.conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
         self.cur = self.conn.cursor()
-
+        self.cur.execute(f"DO $$ BEGIN CREATE TYPE MARKETTRADEGOODSUPPLY AS ENUM ({','.join([t.name_pg() for t in MarketTradeGoodSupply])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        self.cur.execute(f"DO $$ BEGIN CREATE TYPE MARKETTRANSACTIONTYPE AS ENUM ({','.join([t.name_pg() for t in MarketTransactionType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        self.cur.execute(f"DO $$ BEGIN CREATE TYPE SHIPENGINETYPE AS ENUM ({','.join([t.name_pg() for t in ShipEngineType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        self.cur.execute(f"DO $$ BEGIN CREATE TYPE SHIPFRAMETYPE AS ENUM ({','.join([t.name_pg() for t in ShipFrameType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        self.cur.execute(f"DO $$ BEGIN CREATE TYPE SHIPMOUNTTYPE AS ENUM ({','.join([t.name_pg() for t in ShipMountType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        self.cur.execute(f"DO $$ BEGIN CREATE TYPE ShipModuleType AS ENUM ({','.join([t.name_pg() for t in ShipModuleType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        self.cur.execute(f"DO $$ BEGIN CREATE TYPE SHIPNAVFLIGHTMODE AS ENUM ({','.join([t.name_pg() for t in ShipNavFlightMode])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        self.cur.execute(f"DO $$ BEGIN CREATE TYPE SHIPNAVSTATUS AS ENUM ({','.join([t.name_pg() for t in ShipNavStatus])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        self.cur.execute(f"DO $$ BEGIN CREATE TYPE SHIPREACTORTYPE AS ENUM ({','.join([t.name_pg() for t in ShipReactorType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        self.cur.execute(f"DO $$ BEGIN CREATE TYPE SHIPTYPE AS ENUM ({','.join([t.name_pg() for t in ShipType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        self.cur.execute(f"DO $$ BEGIN CREATE TYPE SYSTEMTYPE AS ENUM ({','.join([t.name_pg() for t in SystemType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        self.cur.execute(f"DO $$ BEGIN CREATE TYPE TRADESYMBOL AS ENUM ({','.join([t.name_pg() for t in TradeSymbol])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        self.cur.execute(f"DO $$ BEGIN CREATE TYPE WAYPOINTTRAITSYMBOLS AS ENUM ({','.join([t.name_pg() for t in WaypointTraitSymbols])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        self.cur.execute(f"DO $$ BEGIN CREATE TYPE WAYPOINTTYPE AS ENUM ({','.join([t.name_pg() for t in WaypointType])});  EXCEPTION  WHEN duplicate_object THEN null;  END $$;")
+        
+        # new tables
+        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPREQUIREMENTS (SYMBOL VARCHAR PRIMARY KEY,POWER INTEGER,CREW INTEGER,SLOTS INTEGER)")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPFRAME (SYMBOL SHIPFRAMETYPE PRIMARY KEY,MODULESLOTS INT,FUELCAPACITY INT,NAME VARCHAR,DESCRIPTION VARCHAR,MOUNTINGPOINTS INT,CONDITION INT)")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPENGINE (SYMBOL SHIPENGINETYPE PRIMARY KEY,NAME VARCHAR,DESCRIPTION VARCHAR,SPEED INT,CONDITION INT)")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPREACTOR (SYMBOL SHIPREACTORTYPE PRIMARY KEY,NAME VARCHAR,DESCRIPTION VARCHAR,POWEROUTPUT INT,CONDITION INT)")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPMODULE (SYMBOL SHIPMODULETYPE PRIMARY KEY,NAME VARCHAR,CAPACITY INT,RANGE INT,DESCRIPTION VARCHAR)")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPMOUNT (SYMBOL SHIPMOUNTTYPE PRIMARY KEY,NAME VARCHAR,DESCRIPTION VARCHAR,STRENGTH INT)")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPYARDSHIP (TYPE SHIPTYPE ,waypointsymbol varchar ,ENGINE SHIPENGINETYPE,REACTOR SHIPREACTORTYPE,NAME VARCHAR,DESCRIPTION VARCHAR,MOUNTS SHIPMOUNTTYPE[],PURCHASEPRICE INT,MODULES SHIPMODULETYPE[],FRAME SHIPFRAMETYPE, primary key (TYPE,waypointsymbol))")
+        
         self.cur.execute("CREATE TABLE IF NOT EXISTS waypoints (systemSymbol varchar, symbol varchar PRIMARY KEY, type varchar, x integer,y integer,orbitals varchar[],traits varchar[],chart varchar,faction varchar);")
         self.cur.execute("CREATE TABLE IF NOT EXISTS systems (symbol varchar PRIMARY KEY, type varchar, x integer, y integer);")
         self.cur.execute("CREATE TABLE IF NOT EXISTS markets (symbol varchar, good varchar, type varchar, PRIMARY KEY (symbol, good, type));")
@@ -181,7 +204,6 @@ class SpaceTraders:
         self.cur.execute("CREATE TABLE IF NOT EXISTS requests(before timestamp without time zone,after timestamp without time zone,duration numeric,method varchar,endpoint varchar,status_code integer,error_code integer)")
         self.cur.execute("CREATE TABLE IF NOT EXISTS credits(time timestamp without time zone,agent varchar,credits integer)")
         self.cur.execute("CREATE TABLE IF NOT EXISTS surveysdepleted(time timestamp without time zone,surveyid varchar)")
-        self.conn.commit()
         # endregion
 
         while True:
@@ -819,6 +841,73 @@ class SpaceTraders:
         # TODO add ship listings when at waypoint
         if self.use_db:
             with self.db_lock:
+                temp = []
+                if yard and yard.ships:
+                    for s in yard.ships:
+                        f = s.frame
+                        temp.extend([f.symbol.name,f.moduleSlots,f.fuelCapacity,f.name,f.description,f.mountingPoints,f.condition])
+                    self.cur.execute(
+                                    f"""INSERT INTO shipframe (symbol,moduleSlots,fuelCapacity,name,description,mountingPoints,condition)
+                                    VALUES {','.join([f'(%s, %s, %s, %s, %s, %s, %s)' for _ in range(int(len(temp)/7))])}
+                                    ON CONFLICT (SYMBOL) DO NOTHING""",
+                                    list(temp),
+                                )
+                temp = []
+                if yard and yard.ships:
+                    for s in yard.ships:
+                        e = s.engine
+                        temp.extend([e.symbol.name,e.name,e.description,e.speed,e.condition])
+                    self.cur.execute(
+                                    f"""INSERT INTO ShipEngine (symbol,name,description,speed,condition)
+                                    VALUES {','.join([f'(%s, %s, %s, %s, %s)' for _ in range(int(len(temp)/5))])}
+                                    ON CONFLICT (SYMBOL) DO NOTHING""",
+                                    list(temp),
+                                )
+                temp = []
+                if yard and yard.ships:
+                    for s in yard.ships:
+                        r = s.reactor
+                        temp.extend([r.symbol.name,r.name,r.description,r.powerOutput,r.condition])
+                    self.cur.execute(
+                                    f"""INSERT INTO ShipReactor (symbol,name,description,powerOutput,condition)
+                                    VALUES {','.join([f'(%s, %s, %s, %s, %s)' for _ in range(int(len(temp)/5))])}
+                                    ON CONFLICT (SYMBOL) DO NOTHING""",
+                                    list(temp),
+                                )
+                temp = []
+                if yard and yard.ships:
+                    for s in yard.ships:
+                        ms = s.modules
+                        for m in ms:
+                            temp.extend([m.symbol.name,m.name,m.capacity,m.range,m.description])
+                    self.cur.execute(
+                                    f"""INSERT INTO ShipModule (symbol,name,capacity,range,description)
+                                    VALUES {','.join([f'(%s, %s, %s, %s, %s)' for _ in range(int(len(temp)/5))])}
+                                    ON CONFLICT (SYMBOL) DO NOTHING""",
+                                    list(temp),
+                                )
+                temp = []
+                if yard and yard.ships:
+                    for s in yard.ships:
+                        ms = s.mounts
+                        for m in ms:
+                            temp.extend([m.symbol.name,m.name,m.description,m.strength])
+                    self.cur.execute(
+                                    f"""INSERT INTO ShipMount (symbol,name,description,strength)
+                                    VALUES {','.join([f'(%s, %s, %s, %s)' for _ in range(int(len(temp)/4))])}
+                                    ON CONFLICT (SYMBOL) DO NOTHING""",
+                                    list(temp),
+                                )
+                temp = []
+                if yard and yard.ships:
+                    for s in yard.ships:
+                        temp.extend([yard.symbol,s.engine.symbol.name,s.reactor.symbol.name,s.name,s.description,[m.symbol.name for m in s.mounts] if len(s.mounts)>0 else [None],s.purchasePrice,[m.symbol.name for m in s.modules] if len(s.modules)>0 else [None],s.frame.symbol.name,s.type.name])
+                    self.cur.execute(
+                                    f"""INSERT INTO ShipyardShip (waypointsymbol,engine,reactor,name,description,mounts,purchasePrice,modules,frame,type)
+                                    VALUES {','.join([f'(%s,%s, %s, %s, %s, %s::ShipMountType[], %s, %s::ShipModuleType[], %s, %s)' for _ in range(int(len(temp)/10))])}
+                                    ON CONFLICT (waypointsymbol,type) DO NOTHING""",
+                                    temp,
+                                )
                 self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPYARD, yard))
         return yard
 
@@ -981,6 +1070,26 @@ class SpaceTraders:
             self.ships[ship.symbol] = ship
         if self.use_db:
             with self.db_lock:
+                temp = []
+                for s in self.ships:
+                    f = self.ships[s].frame
+                    temp.extend([f.symbol.name,f.moduleSlots,f.fuelCapacity,f.name,f.description,f.mountingPoints,f.condition])
+                    self.cur.execute(
+                                    f"""INSERT INTO shipframe (symbol,moduleSlots,fuelCapacity,name,description,mountingPoints,condition)
+                                    VALUES {','.join([f'(%s, %s, %s, %s, %s, %s, %s)' for _ in range(int(len(temp)/7))])}
+                                    ON CONFLICT (SYMBOL) DO NOTHING""",
+                                    list(temp),
+                                )
+                temp = []
+                for s in self.ships:
+                    e = self.ships[s].engine
+                    temp.extend([e.symbol.name,e.name,e.description,e.speed,e.condition])
+                    self.cur.execute(
+                                    f"""INSERT INTO ShipEngine (symbol,name,description,speed,condition)
+                                    VALUES {','.join([f'(%s, %s, %s, %s, %s)' for _ in range(int(len(temp)/5))])}
+                                    ON CONFLICT (symbol) DO NOTHING""",
+                                    list(temp),
+                                )
                 self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP, [Ship(ship) for ship in data]))
         return self.ships, Meta(j["meta"])
 
@@ -1297,3 +1406,8 @@ class SpaceTraders:
     # endregion
 
 
+
+if __name__ == "__main__":
+    st = SpaceTraders()
+    
+    time.sleep(4)
