@@ -649,9 +649,9 @@ class SpaceTraders:
         duration = (after-before).total_seconds()
         if self.use_db:
             with self.db_lock:
-                if len(r.text) > 0:
+                try:
                     j = r.json()
-                else:
+                except:
                     j= None
                 self.db_queue.append(Queue_Obj(Queue_Obj_Type.REQUEST_METRIC, (before,after,duration,method,url,r.status_code,(j["error"]["code"] if "error" in j else None) if j else None)))
         
