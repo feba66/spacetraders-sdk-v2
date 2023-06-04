@@ -877,11 +877,11 @@ class SpaceTraders:
         r = self.my_req(path, "post")
         j = r.json()
 
-        self.agent = Agent(data["agent"])
         data = j["data"] if "data" in j else None
+        self.agent = Agent(data["agent"])
         if data == None:
             return  # TODO raise error
-        contract = Contract(data)
+        contract = Contract(data["contract"])
         self.contracts[contract.id] = contract
         if self.use_db:
             with self.db_lock:
@@ -1224,6 +1224,19 @@ class SpaceTraders:
     # scan systems
     # scan waypoints
     # scan ships
+    def Negotiate_Contract(self,shipSymbol):
+        path = f"/my/ships/{shipSymbol}/negotiate/contract"
+        r = self.my_req(path, "post")
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        contract = Contract(data["contract"])
+        # if self.use_db:
+        #     with self.db_lock:
+        #         self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL, self.ships[shipSymbol]))
+        return contract
+    
     def Refuel(self, shipSymbol):
         path = f"/my/ships/{shipSymbol}/refuel"
         r = self.my_req(path, "post")
@@ -1284,174 +1297,3 @@ class SpaceTraders:
     # endregion
 
 
-if __name__ == "__main__":
-    st = SpaceTraders()
-    st.Status()
-
-    # pprint(st.Register("feba662","ASTRO"))
-    st.Login(os.getenv("TOKEN"))
-    # wps,_ = st.Get_Waypoints("X1-AD50")
-    # for w in wps:
-    #     wp = st.waypoints[w]
-    #     traits = [t.symbol for t in wp.traits]
-    #     if WaypointTraitSymbols.MARKETPLACE in traits:
-    #         st.Get_Market(w)
-    st.Get_Agent()
-    st.Get_Ships()
-    ship = st.ships["FEBA66-1"]
-    goal_s = "X1-JY33"
-    start_s = "X1-AD50"
-    goal = "X1-JY33-68113B"
-    g_jg = "X1-JY33-77015E"
-    s_jg  = "X1-AD50-71849F"
-    jg_2 = "X1-NY11"
-    sy = "X1-AD50-96037Z"
-    
-    # while True:
-    contracts,_ = st.Get_Contracts()
-    #     ship = st.Get_Ship("FEBA66-1")
-    #     if ship.fuel.current < 300:
-    #         st.Refuel(ship.symbol)
-    contract = contracts[-1]
-    #     deliver:ContractDeliverGood =contract.terms.deliver[0]
-    #     units = deliver.unitsRequired-deliver.unitsFulfilled
-    #     if units == 0:
-    #         st.Fulfill_Contract(contract.id)
-    #         break
-    #     if ship.nav.waypointSymbol != "X1-AD50-85905A" and ship.nav.status != ShipNavStatus.IN_TRANSIT:
-    #         n,f=st.Navigate(ship.symbol,"X1-AD50-85905A")
-    #         st.sleep_till(nav=n)
-    #     st.Dock(ship.symbol)
-    #     a,c,t = st.Purchase(ship.symbol,deliver.tradeSymbol,min(units,ship.cargo.capacity-ship.cargo.units))
-    #     n,f = st.Navigate(ship.symbol,deliver.destinationSymbol)
-    #     st.sleep_till(nav=n)
-    #     st.Dock(ship.symbol)
-    #     st.Deliver_Contract(contract.id,ship.symbol,deliver.tradeSymbol,min(units,ship.cargo.units))
-    wps = ["X1-AD50-41224X", "X1-AD50-62128C", "X1-AD50-82352Z"]
-    for w in wps:
-        n,f=st.Navigate(ship.symbol,w)
-        st.sleep_till(nav=n)
-        st.Get_Market(w)
-    
-    if False:
-        n,f=st.Navigate(ship.symbol,"X1-NY11-80552E")
-        st.sleep_till(nav=n)
-        st.Dock(ship.symbol)
-        st.Refuel(ship.symbol)
-        n,f=st.Navigate(ship.symbol,"X1-NY11-13165B")
-        st.sleep_till(nav=n)
-        cd = st.Jump(ship.symbol,start_s)
-        n,f = st.Navigate(ship.symbol,"X1-AD50-82773B")
-        st.sleep_till(nav=n)
-        # r = st.Chart(ship.symbol)
-        # print(r)
-    # n,f=st.Navigate(ship.symbol,g_jg)
-    # st.sleep_till(ship.nav)
-    # cd = st.Jump(ship.symbol,start_s)
-    # n,f = st.Navigate(ship.symbol,sy)
-    # st.sleep_till(nav=n)
-    # st.Dock(ship.symbol)
-    # st.Deliver_Contract(contract.id,ship.symbol,"MODULE_CARGO_HOLD_I",42)
-    # st.Sell(ship.symbol,"MODULE_CREW_QUARTERS_I","8")
-    # st.Sell(ship.symbol,"MODULE_CREW_QUARTERS_I","10")
-    # st.Sell(ship.symbol,"MODULE_MINERAL_PROCESSOR_I","40")
-    # st.Get_Market(goal)
-    # st.Get_Market(sy)
-    # pprint(st.Get_Contracts())
-    # c_id = "clhmfp5wa0734s60dmss50pes"
-    # st.Navigate()
-    # pprint(st.Accept_Contract(c_id))
-    # exit()
-    # pprint(st.Register("test_9871","CULT"))
-    # exit()
-    # st.Get_Systems(limit=3)
-    # pprint(st.Get_Waypoint("X1-AC10-73119Z"))
-    # st.Get_Market("X1-JP81-52264Z")
-    # exit()
-    # st.Init_Systems()
-    # w = []
-    # for s in st.systems:
-    #     w.extend(st.systems[s].waypoints)
-    
-    # st.Purchase_Ship("SHIP_ORE_HOUND","X1-UY52-72027D")
-    # st.Get_Ships()
-    # st.Get_Waypoints("X1-AD50")
-    # ship = list(st.ships.values())[0]
-
-    # # survey = Survey(json.loads('{"signature": "X1-UY52-72325C-B211DC","symbol": "X1-UY52-72325C","deposits": [{"symbol": "SILVER_ORE"},{"symbol": "ICE_WATER"},{"symbol": "ICE_WATER"}],"expiration": "2023-05-21T00:15:59.841Z","size": "MODERATE"}'))
-    # # pprint(st.Extract(ship.symbol,survey))
-    # # nav, fuel = st.Navigate(ship.symbol, "X1-UY52-72325C")
-    # # st.sleep_till(nav)
-    # # st.Get_Shipyard("X1-UY52-72027D")
-    # gate = st.Get_JumpGate("X1-UY52-72027D")
-    # time.sleep(1)
-    # exit()
-    # pprint(gate.connectedSystems[0:10])
-    # wps,_ = st.Get_Waypoints("X1-SR51")
-    # warpGoal = ""
-    # for w in wps:
-    #     if st.waypoints[w].type == WaypointType.JUMP_GATE:
-    #         warpGoal=w
-    #         break
-    # pprint(st.Jump(ship.symbol,"X1-AC10"))
-    # pprint(st.Warp(ship.symbol,"X1-AC10-73119Z"))
-    # time.sleep(1)
-    if False:
-        st.cur.execute(
-            """select systemsymbol from waypoints
-               where 'UNCHARTED' = any(traits)
-               group by systemsymbol"""
-        )
-        st.conn.commit()
-        todo = [p[0] for p in st.cur.fetchall()]
-
-        for t in todo:
-            l, meta = st.Get_Waypoints(t)
-            if meta.total > 20:
-                st.Get_Waypoints(t, 2)
-    if False:
-        st.cur.execute(
-            """select systemsymbol from waypoints
-                        group by systemsymbol"""
-        )
-        st.conn.commit()
-        known = [p[0] for p in st.cur.fetchall()]
-
-        for syskey in st.systems.keys():
-            sys = st.systems[syskey]
-            if sys.symbol not in known:
-                l, meta = st.Get_Waypoints(sys.symbol)
-                if meta.total > 20:
-                    st.Get_Waypoints(sys.symbol, 2)
-    if False:
-        st.cur.execute(
-            """select symbol from waypoints
-                        where 'SHIPYARD' = any (traits)"""
-        )
-        st.conn.commit()
-        shipyards = [p[0] for p in st.cur.fetchall()]
-        for market in shipyards:
-            st.Get_Shipyard(market)
-    if False:
-        st.cur.execute(
-            """select symbol from waypoints
-                        where 'MARKETPLACE' = any (traits)"""
-        )
-
-        st.conn.commit()
-        markets = [p[0] for p in st.cur.fetchall()]
-        for market in markets:
-            st.Get_Market(market)
-    # st.Get_Market("X1-DF55-17335A")
-    # pprint(st.Get_Agent())
-    # pprint(st.Get_Ships())
-    # pprint(st.Get_Waypoints(ship.nav.systemSymbol))
-    # pprint(st.Navigate(ship.symbol,"X1-AC10-39507F"))
-    # pprint(st.Get_Market("X1-AC10-39507F"))
-    # pprint(st.Get_Shipyard("X1-AC10-39507F"))
-    # st.Init_Systems()
-    print("done")
-    
-    if st.use_db:
-        while len(st.db_queue) > 0:
-            time.sleep(3)
