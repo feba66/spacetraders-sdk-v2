@@ -2,7 +2,7 @@ from math import ceil
 import os
 import time
 from api import SpaceTraders
-from enums import ShipNavStatus
+from enums import ShipFrameType, ShipNavStatus
 from objects import Ship
 import threading
 import random
@@ -60,7 +60,7 @@ while len(st.db_queue) > 0 or running:
         for ship in list(st.ships.values()):
             if ship.symbol not in ships:
                 ships.append(ship.symbol)
-                if ship.registration.role != "SURVEYOR" and ship.symbol != "FEBA66-1":
+                if ship.frame.symbol == ShipFrameType.FRAME_MINER and ship.symbol != "FEBA66-1":
                     t = threading.Thread(target=mine,name=ship.symbol,args=[st,ship])
                     t.daemon=True
                     t.start()
