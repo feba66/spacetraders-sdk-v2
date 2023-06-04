@@ -182,6 +182,8 @@ class SpaceTraders:
         self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPMODULE (SYMBOL SHIPMODULETYPE PRIMARY KEY,NAME VARCHAR,CAPACITY INT,RANGE INT,DESCRIPTION VARCHAR)")
         self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPMOUNT (SYMBOL SHIPMOUNTTYPE PRIMARY KEY,NAME VARCHAR,DESCRIPTION VARCHAR,STRENGTH INT)")
         self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPYARDSHIP (TYPE SHIPTYPE ,waypointsymbol varchar ,ENGINE SHIPENGINETYPE,REACTOR SHIPREACTORTYPE,NAME VARCHAR,DESCRIPTION VARCHAR,MOUNTS SHIPMOUNTTYPE[],PURCHASEPRICE INT,MODULES SHIPMODULETYPE[],FRAME SHIPFRAMETYPE, primary key (TYPE,waypointsymbol))")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPYARDTRANSACTION (WAYPOINTSYMBOL VARCHAR,SHIPSYMBOL VARCHAR,PRICE INT,AGENTSYMBOL VARCHAR,TIMESTAMP TIMESTAMP WITHOUT TIME ZONE,PRIMARY KEY (WAYPOINTSYMBOL,TIMESTAMP))")
+        
         
         self.cur.execute("CREATE TABLE IF NOT EXISTS waypoints (systemSymbol varchar, symbol varchar PRIMARY KEY, type varchar, x integer,y integer,orbitals varchar[],traits varchar[],chart varchar,faction varchar);")
         self.cur.execute("CREATE TABLE IF NOT EXISTS systems (symbol varchar PRIMARY KEY, type varchar, x integer, y integer);")
@@ -306,20 +308,80 @@ class SpaceTraders:
                                 list(temp))
                         self.conn.commit()
                     elif q_obj.type == Queue_Obj_Type.SHIPYARD:
-                        yard: list[Shipyard] = q_obj.data
+                        yards: list[Shipyard] = q_obj.data
                         temp = []
-                        for sy in [yard]:
-                            for shiptype in sy.shipTypes:
-                                temp.extend([sy.symbol, shiptype.name])
-                            # temp.extend([wp.systemSymbol, wp.symbol,wp.type.name,wp.x,wp.y,[x.symbol for x in wp.orbitals],[x.symbol.name for x in wp.traits],wp.chart.submittedBy if wp.chart else "UNCHARTED",wp.faction.symbol if wp.faction else " "])
-                        self.cur.execute(
-                            f"""INSERT INTO shipyards (symbol,shiptype)
-                            VALUES  {','.join([f'(%s, %s)' for _ in range(int(len(temp)/2))])}
-                            ON CONFLICT (symbol,shiptype) 
-                            DO NOTHING""",
-                            temp,
-                        )
-                        self.conn.commit()
+                        for yard in [yards]:
+                            for shiptype in yard.shipTypes:
+                                temp.extend([yard.symbol, shiptype.name])
+                            self.cur.execute(
+                                f"""INSERT INTO shipyards (symbol,shiptype)
+                                VALUES  {','.join([f'(%s, %s)' for _ in range(int(len(temp)/2))])}
+                                ON CONFLICT (symbol,shiptype) DO NOTHING""",
+                                temp,
+                            )
+                            
+                            if yard and yard.ships:
+                                temp = []
+                                for s in yard.ships:
+                                    f = s.frame
+                                    temp.extend([f.symbol.name,f.moduleSlots,f.fuelCapacity,f.name,f.description,f.mountingPoints,f.condition])
+                                self.cur.execute(
+                                                f"""INSERT INTO shipframe (symbol,moduleSlots,fuelCapacity,name,description,mountingPoints,condition)
+                                                VALUES {','.join([f'(%s, %s, %s, %s, %s, %s, %s)' for _ in range(int(len(temp)/7))])}
+                                                ON CONFLICT (SYMBOL) DO NOTHING""",
+                                                list(temp),
+                                            )
+                                temp = []
+                                for s in yard.ships:
+                                    e = s.engine
+                                    temp.extend([e.symbol.name,e.name,e.description,e.speed,e.condition])
+                                self.cur.execute(
+                                                f"""INSERT INTO ShipEngine (symbol,name,description,speed,condition)
+                                                VALUES {','.join([f'(%s, %s, %s, %s, %s)' for _ in range(int(len(temp)/5))])}
+                                                ON CONFLICT (SYMBOL) DO NOTHING""",
+                                                list(temp),
+                                            )
+                                temp = []
+                                for s in yard.ships:
+                                    r = s.reactor
+                                    temp.extend([r.symbol.name,r.name,r.description,r.powerOutput,r.condition])
+                                self.cur.execute(
+                                                f"""INSERT INTO ShipReactor (symbol,name,description,powerOutput,condition)
+                                                VALUES {','.join([f'(%s, %s, %s, %s, %s)' for _ in range(int(len(temp)/5))])}
+                                                ON CONFLICT (SYMBOL) DO NOTHING""",
+                                                list(temp),
+                                            )
+                                temp = []
+                                for s in yard.ships:
+                                    ms = s.modules
+                                    for m in ms:
+                                        temp.extend([m.symbol.name,m.name,m.capacity,m.range,m.description])
+                                self.cur.execute(
+                                                f"""INSERT INTO ShipModule (symbol,name,capacity,range,description)
+                                                VALUES {','.join([f'(%s, %s, %s, %s, %s)' for _ in range(int(len(temp)/5))])}
+                                                ON CONFLICT (SYMBOL) DO NOTHING""",
+                                                list(temp),
+                                            )
+                                temp = []
+                                for s in yard.ships:
+                                    ms = s.mounts
+                                    for m in ms:
+                                        temp.extend([m.symbol.name,m.name,m.description,m.strength])
+                                self.cur.execute(
+                                                f"""INSERT INTO ShipMount (symbol,name,description,strength)
+                                                VALUES {','.join([f'(%s, %s, %s, %s)' for _ in range(int(len(temp)/4))])}
+                                                ON CONFLICT (SYMBOL) DO NOTHING""",
+                                                list(temp),
+                                            )
+                                temp = []
+                                for s in yard.ships:
+                                    temp.extend([yard.symbol,s.engine.symbol.name,s.reactor.symbol.name,s.name,s.description,[m.symbol.name for m in s.mounts] if len(s.mounts)>0 else [None],s.purchasePrice,[m.symbol.name for m in s.modules] if len(s.modules)>0 else [None],s.frame.symbol.name,s.type.name])
+                                self.cur.execute(
+                                                f"""INSERT INTO ShipyardShip (waypointsymbol,engine,reactor,name,description,mounts,purchasePrice,modules,frame,type)
+                                                VALUES {','.join([f'(%s,%s, %s, %s, %s, %s::ShipMountType[], %s, %s::ShipModuleType[], %s, %s)' for _ in range(int(len(temp)/10))])}
+                                                ON CONFLICT (waypointsymbol,type) DO NOTHING""",
+                                                temp,
+                                            )
                     elif q_obj.type == Queue_Obj_Type.SHIP:
                         ships: list[Ship] = q_obj.data
                         temp = []
@@ -841,73 +903,6 @@ class SpaceTraders:
         # TODO add ship listings when at waypoint
         if self.use_db:
             with self.db_lock:
-                temp = []
-                if yard and yard.ships:
-                    for s in yard.ships:
-                        f = s.frame
-                        temp.extend([f.symbol.name,f.moduleSlots,f.fuelCapacity,f.name,f.description,f.mountingPoints,f.condition])
-                    self.cur.execute(
-                                    f"""INSERT INTO shipframe (symbol,moduleSlots,fuelCapacity,name,description,mountingPoints,condition)
-                                    VALUES {','.join([f'(%s, %s, %s, %s, %s, %s, %s)' for _ in range(int(len(temp)/7))])}
-                                    ON CONFLICT (SYMBOL) DO NOTHING""",
-                                    list(temp),
-                                )
-                temp = []
-                if yard and yard.ships:
-                    for s in yard.ships:
-                        e = s.engine
-                        temp.extend([e.symbol.name,e.name,e.description,e.speed,e.condition])
-                    self.cur.execute(
-                                    f"""INSERT INTO ShipEngine (symbol,name,description,speed,condition)
-                                    VALUES {','.join([f'(%s, %s, %s, %s, %s)' for _ in range(int(len(temp)/5))])}
-                                    ON CONFLICT (SYMBOL) DO NOTHING""",
-                                    list(temp),
-                                )
-                temp = []
-                if yard and yard.ships:
-                    for s in yard.ships:
-                        r = s.reactor
-                        temp.extend([r.symbol.name,r.name,r.description,r.powerOutput,r.condition])
-                    self.cur.execute(
-                                    f"""INSERT INTO ShipReactor (symbol,name,description,powerOutput,condition)
-                                    VALUES {','.join([f'(%s, %s, %s, %s, %s)' for _ in range(int(len(temp)/5))])}
-                                    ON CONFLICT (SYMBOL) DO NOTHING""",
-                                    list(temp),
-                                )
-                temp = []
-                if yard and yard.ships:
-                    for s in yard.ships:
-                        ms = s.modules
-                        for m in ms:
-                            temp.extend([m.symbol.name,m.name,m.capacity,m.range,m.description])
-                    self.cur.execute(
-                                    f"""INSERT INTO ShipModule (symbol,name,capacity,range,description)
-                                    VALUES {','.join([f'(%s, %s, %s, %s, %s)' for _ in range(int(len(temp)/5))])}
-                                    ON CONFLICT (SYMBOL) DO NOTHING""",
-                                    list(temp),
-                                )
-                temp = []
-                if yard and yard.ships:
-                    for s in yard.ships:
-                        ms = s.mounts
-                        for m in ms:
-                            temp.extend([m.symbol.name,m.name,m.description,m.strength])
-                    self.cur.execute(
-                                    f"""INSERT INTO ShipMount (symbol,name,description,strength)
-                                    VALUES {','.join([f'(%s, %s, %s, %s)' for _ in range(int(len(temp)/4))])}
-                                    ON CONFLICT (SYMBOL) DO NOTHING""",
-                                    list(temp),
-                                )
-                temp = []
-                if yard and yard.ships:
-                    for s in yard.ships:
-                        temp.extend([yard.symbol,s.engine.symbol.name,s.reactor.symbol.name,s.name,s.description,[m.symbol.name for m in s.mounts] if len(s.mounts)>0 else [None],s.purchasePrice,[m.symbol.name for m in s.modules] if len(s.modules)>0 else [None],s.frame.symbol.name,s.type.name])
-                    self.cur.execute(
-                                    f"""INSERT INTO ShipyardShip (waypointsymbol,engine,reactor,name,description,mounts,purchasePrice,modules,frame,type)
-                                    VALUES {','.join([f'(%s,%s, %s, %s, %s, %s::ShipMountType[], %s, %s::ShipModuleType[], %s, %s)' for _ in range(int(len(temp)/10))])}
-                                    ON CONFLICT (waypointsymbol,type) DO NOTHING""",
-                                    temp,
-                                )
                 self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPYARD, yard))
         return yard
 
@@ -1410,4 +1405,6 @@ class SpaceTraders:
 if __name__ == "__main__":
     st = SpaceTraders()
     
-    time.sleep(4)
+    if st.use_db:
+        while len(st.db_queue) > 0:
+            time.sleep(2)
