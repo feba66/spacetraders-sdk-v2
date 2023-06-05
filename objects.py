@@ -595,6 +595,14 @@ class MarketTransaction:
         self.tradeSymbol = data["tradeSymbol"]
         self.totalPrice = data["totalPrice"]
 
+@dataclass
+class Transaction:
+    timestamp: str
+    totalPrice: int
+
+    def __init__(self, data) -> None:
+        self.timestamp = data["timestamp"]
+        self.totalPrice = data["totalPrice"]
 
 @dataclass
 class MarketTradeGood:

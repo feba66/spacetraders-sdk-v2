@@ -33,10 +33,12 @@ from objects import (
     Ship,
     ShipCargo,
     ShipFuel,
+    ShipMount,
     ShipNav,
     Shipyard,
     Survey,
     System,
+    Transaction,
     Waypoint,
     WaypointTraitSymbols,
     ShipNavStatus,
@@ -749,9 +751,11 @@ class SpaceTraders:
         for jg in self.jumpgates:
             if jg.startswith(wp):
                 return jg
-    def get_dist(self,a:str,b:str):
+    def get_dist_waypoints(self,a:str,b:str):
         a:Waypoint = self.waypoints[a]
         b:Waypoint = self.waypoints[b]
+        return math.sqrt((a.x-b.x)**2+(a.y-b.y)**2)
+    def get_dist(self,a,b):
         return math.sqrt((a.x-b.x)**2+(a.y-b.y)**2)
     # endregion
 
@@ -1358,6 +1362,57 @@ class SpaceTraders:
     # scan systems
     # scan waypoints
     # scan ships
+    
+    def Get_Mounts(self,shipSymbol):
+        path = f"/my/ships/{shipSymbol}/mounts"
+        r = self.my_req(path, "get")
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        mounts=[]
+        for d in data:
+            mounts.append(ShipMount(d)) 
+        
+        if shipSymbol in self.ships:
+            self.ships[shipSymbol].mounts = mounts
+        return mounts
+    def Install_Mount(self,shipSymbol,symbol):
+        path = f"/my/ships/{shipSymbol}/mounts/install"
+        r = self.my_req(path, "post",data={"symbol": symbol})
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        self.agent = Agent(data["agent"])
+        cargo = ShipCargo(data["cargo"])
+        mounts=[]
+        for d in data["mounts"]:
+            mounts.append(ShipMount(d)) 
+        transaction = Transaction(data["transaction"])
+        if shipSymbol in self.ships:
+            self.ships[shipSymbol].cargo = cargo
+            self.ships[shipSymbol].mounts = mounts
+        return (mounts,cargo,transaction)
+    def Remove_Mount(self,shipSymbol,symbol):
+        path = f"/my/ships/{shipSymbol}/mounts/remove"
+        r = self.my_req(path, "post",data={"symbol": symbol})
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        self.agent = Agent(data["agent"])
+        cargo = ShipCargo(data["cargo"])
+        mounts=[]
+        for d in data["mounts"]:
+            mounts.append(ShipMount(d)) 
+        transaction = Transaction(data["transaction"])
+        if shipSymbol in self.ships:
+            self.ships[shipSymbol].cargo = cargo
+            self.ships[shipSymbol].mounts = mounts
+        return (mounts,cargo,transaction)
+    
+    
     def Negotiate_Contract(self,shipSymbol):
         path = f"/my/ships/{shipSymbol}/negotiate/contract"
         r = self.my_req(path, "post")
