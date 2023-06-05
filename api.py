@@ -45,23 +45,24 @@ from objects import (
 
 
 class Queue_Obj_Type(Enum):
-    WAYPOINT = 1
-    SYSTEM = 2
-    MARKET = 3
-    SHIPYARD = 4
-    SHIP = 5
-    CONSUMPTION = 6
-    LEADERBOARD = 7
-    SHIPNAV = 8
-    SHIPFUEL = 9
-    SHIPCARGO = 10
-    FACTION = 11
-    REQUEST_METRIC = 12
-    TRANSACTION = 13
-    EXTRACTION = 14
-    SURVEY = 15
-    SURVEY_DEPLETED = 16
-    RESET_WIPE = 17
+    CONSUMPTION = 1
+    EXTRACTION = 2
+    FACTION = 3
+    LEADERBOARD = 4
+    MARKET = 5
+    REQUEST_METRIC = 6
+    RESET_WIPE = 7
+    SHIP = 8
+    SHIPCARGO = 9
+    SHIPFUEL = 10
+    SHIPNAV = 11
+    SHIPYARD = 12
+    SURVEY = 13
+    SURVEY_DEPLETED = 14
+    SYSTEM = 15
+    TRANSACTION = 16
+    WAYPOINT = 17
+    JUMPGATE = 18
 
 
 @dataclass
@@ -184,7 +185,7 @@ class SpaceTraders:
         self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPMOUNT (SYMBOL SHIPMOUNTTYPE PRIMARY KEY,NAME VARCHAR,DESCRIPTION VARCHAR,STRENGTH INT)")
         self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPYARDSHIP (TYPE SHIPTYPE ,waypointsymbol varchar ,ENGINE SHIPENGINETYPE,REACTOR SHIPREACTORTYPE,NAME VARCHAR,DESCRIPTION VARCHAR,MOUNTS SHIPMOUNTTYPE[],PURCHASEPRICE INT,MODULES SHIPMODULETYPE[],FRAME SHIPFRAMETYPE, primary key (TYPE,waypointsymbol))")
         self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPYARDTRANSACTION (WAYPOINTSYMBOL VARCHAR,SHIPSYMBOL VARCHAR,PRICE INT,AGENTSYMBOL VARCHAR,TIMESTAMP TIMESTAMP WITHOUT TIME ZONE,PRIMARY KEY (WAYPOINTSYMBOL,TIMESTAMP))")
-        
+        self.cur.execute("CREATE TABLE IF NOT EXISTS JUMPGATECONNECTIONS (WAYPOINTSYMBOL VARCHAR, CONNECTIONS VARCHAR[], PRIMARY KEY (WAYPOINTSYMBOL))")
         
         self.cur.execute("CREATE TABLE IF NOT EXISTS waypoints (systemSymbol varchar, symbol varchar PRIMARY KEY, type varchar, x integer,y integer,orbitals varchar[],traits varchar[],chart varchar,faction varchar);")
         self.cur.execute("CREATE TABLE IF NOT EXISTS systems (symbol varchar PRIMARY KEY, type varchar, x integer, y integer);")
@@ -610,7 +611,6 @@ class SpaceTraders:
                                     VALUES {','.join([f'(%s, %s, %s, %s, %s, %s)' for _ in range(int(len(temp)/6))])}""",
                                 list(temp),
                             )
-                        self.conn.commit()
                     elif q_obj.type == Queue_Obj_Type.SURVEY_DEPLETED:
                         data: tuple = q_obj.data
 
@@ -634,7 +634,17 @@ class SpaceTraders:
                         cur = tmp.cursor()
                         
                         cur.execute(f"""IALTER DATABASE test RENAME TO test_{datetime.utcnow().isoformat("YYYYMMDD")};""",)
-                        tmp.commit()
+                    elif q_obj.type == Queue_Obj_Type.JUMPGATE:
+                        wp,jumpgate = q_obj.data
+                        temp = [wp,[cs.symbol for cs in jumpgate.connectedSystems]]
+                       
+                        if len(temp)>1:
+                            self.cur.execute(
+                                f"""INSERT INTO JumpGateConnections (waypointSymbol,connections)
+                                    VALUES {','.join([f'(%s, %s)' for _ in range(int(len(temp)/2))])}""",
+                                list(temp),
+                            )
+                        
                 # TODO add the msg to db
                 # TODO add the queue-ing to all functions
             else:
@@ -933,6 +943,9 @@ class SpaceTraders:
             return  # TODO raise error
         gate = JumpGate(data)
         self.jumpgates[waypointSymbol] = gate
+        if self.use_db:
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.JUMPGATE, (waypointSymbol,gate)))
         return gate
 
     # endregion
