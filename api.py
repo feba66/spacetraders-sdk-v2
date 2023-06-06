@@ -131,8 +131,9 @@ class SpaceTraders:
 
         ch = logging.StreamHandler()
         ch.setLevel(logging.INFO)
-
-        fh = logging.FileHandler("SpaceTraders.log", encoding="utf-8")
+        
+        fh = logging.FileHandler(os.getenv("WORKING_FOLDER")+"SpaceTraders.log", encoding="utf-8")
+            
         fh.setLevel(logging.DEBUG)
 
         ch.setFormatter(formatter)
