@@ -104,7 +104,8 @@ class SpaceTraders:
     cooldowns: dict[str, Cooldown]
     surveys: dict[str, Survey]
     survey_lock = threading.Lock()
-    req_lock= threading.Semaphore(2)
+    req_lock= threading.Semaphore(1)
+    miners = threading.Semaphore(3)
 
     token:str
     # endregion
@@ -733,9 +734,12 @@ class SpaceTraders:
                 if self.time_till(survey.expiration) < 0:
                     self.surveys.pop(k)
 
-    def get_surveys_for(self, waypointSymbol):
+    def get_surveys_for(self, waypointSymbol,good=None):
         with self.survey_lock:
-            keys = [k for k in self.surveys.keys() if self.surveys[k].symbol == waypointSymbol]
+            if good:
+                keys = [k for k in self.surveys.keys() if self.surveys[k].symbol == waypointSymbol and good in [d.symbol for d in self.surveys[k].deposits]]
+            else:
+                keys = [k for k in self.surveys.keys() if self.surveys[k].symbol == waypointSymbol]
         return keys
 
     def get_survey_worth(self, survey: Survey):

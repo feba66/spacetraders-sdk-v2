@@ -43,20 +43,41 @@ def minesurvey(st:SpaceTraders, ship:Ship):
                     st.Dock(ship.symbol)
                     st.Sell(ship.symbol,extract.yield_.symbol,extract.yield_.units)
 def mine(st:SpaceTraders, ship:Ship):
+    if ship.cargo.units > 0:
+        for c in ship.cargo.inventory:
+            if c.symbol != "ANTIMATTER":
+                if ship.nav.status != ShipNavStatus.DOCKED:
+                    st.Dock(ship.symbol)
+                st.Sell(ship.symbol,c.symbol,c.units)
+    storage = "FEBA66-28"
+    mounts = [m.symbol.name for m in ship.mounts]
+    if mounts.count("MOUNT_MINING_LASER_II")<2:
+        if ship.nav.status == ShipNavStatus.IN_TRANSIT:
+            st.sleep_till(ship.nav)
+        st.Orbit(ship.symbol)
+        nav,_ = st.Navigate(ship.symbol,"X1-AD50-96037Z")
+        st.sleep_till(nav=nav)
+        st.Dock(ship.symbol)
+        st.Remove_Mount(ship.symbol,"MOUNT_SURVEYOR_I")
+        st.Transfer(ship.symbol,"MOUNT_SURVEYOR_I",1,storage) 
+        st.Transfer(storage,"MOUNT_MINING_LASER_II",1,ship.symbol) 
+        st.Install_Mount(ship.symbol,"MOUNT_MINING_LASER_II")
+        st.Orbit(ship.symbol)
+        ship = st.Get_Ship(ship.symbol)
+    
     cd = st.Get_Cooldown(ship.symbol)
     if ship.nav.waypointSymbol != "X1-AD50-85905A":
         if ship.nav.status != ShipNavStatus.IN_TRANSIT:
             nav,_ = st.Navigate(ship.symbol,"X1-AD50-85905A")
         st.sleep_till(nav=nav)
-    if ship.nav.status == ShipNavStatus.IN_TRANSIT:
+    elif ship.nav.status == ShipNavStatus.IN_TRANSIT:
         st.sleep_till(nav=ship.nav)
+        
+    st.Orbit(ship.symbol)
     while True:
-        # if random.randint(0,60) < 1:
-        #     st.Get_Market("X1-AD50-85905A")
         ship = st.ships[ship.symbol]
         if cd!=None and st.time_till(cd.expiration) > 0:
             st.sleep_till(cooldown=cd)
-        surveys = st.sort_surveys_by_worth(st.get_surveys_for(ship.nav.waypointSymbol))
         
         if ship.cargo.units > 0:
             for c in ship.cargo.inventory:
@@ -64,24 +85,21 @@ def mine(st:SpaceTraders, ship:Ship):
                     if ship.nav.status != ShipNavStatus.DOCKED:
                         st.Dock(ship.symbol)
                     st.Sell(ship.symbol,c.symbol,c.units)
-        # st.Get_Ship(ship.symbol)
-        ship = st.ships[ship.symbol]
-        if ship.nav.status != ShipNavStatus.IN_ORBIT:
-            st.Orbit(ship.symbol)
-        if len(surveys)>0 and surveys[0][0] in st.surveys:
-            try:
-                extract,cargo,cd = st.Extract(ship.symbol,st.surveys[surveys[0][0]])
-            except:
-                st.Orbit(ship.symbol)
-                extract,cargo,cd = st.Extract(ship.symbol,st.surveys[surveys[0][0]])
+        no = True
+        with st.miners:
+            surveys = st.sort_surveys_by_worth(st.get_surveys_for(ship.nav.waypointSymbol,"DIAMONDS"))
+            if len(surveys)>0 and surveys[0][0] in st.surveys:
+                no=False
+                try:
+                    st.Orbit(ship.symbol)
+                    extract,cargo,cd = st.Extract(ship.symbol,st.surveys[surveys[0][0]])
+                    st.Dock(ship.symbol)
+                    st.Sell(ship.symbol,extract.yield_.symbol,extract.yield_.units)
+                except:
+                    pass
             # extract,cargo,cd = st.Extract(ship.symbol)
-        else:
-            extract,cargo,cd = st.Extract(ship.symbol)
-            
-            ship = st.ships[ship.symbol]
-            if extract!=None:
-                st.Dock(ship.symbol)
-                st.Sell(ship.symbol,extract.yield_.symbol,extract.yield_.units)
+        if no:
+            time.sleep(random.randrange(1,10))
 def survey(st:SpaceTraders, ship:Ship):
     cd = st.Get_Cooldown(ship.symbol)
     if ship.nav.waypointSymbol != "X1-AD50-85905A":
@@ -90,13 +108,12 @@ def survey(st:SpaceTraders, ship:Ship):
         st.sleep_till(nav=nav)
     if ship.nav.status == ShipNavStatus.IN_TRANSIT:
         st.sleep_till(nav=ship.nav)
+    st.Orbit(ship.symbol)
     while True:
         ship = st.ships[ship.symbol]
         if cd!=None and st.time_till(cd.expiration) > 0:
             st.sleep_till(cooldown=cd)
         
-        if ship.nav.status != ShipNavStatus.IN_ORBIT:
-            st.Orbit(ship.symbol)
         _,cd = st.Create_Survey(ship.symbol)
         
 
@@ -112,6 +129,7 @@ ships = []
 disallowed_ships = ["FEBA66-1"]
 while len(st.db_queue) > 0 or running:
     if i >= 20:
+        st.Get_Market("X1-AD50-85905A")
         ships = [t.name for t in threading.enumerate()]
         _,meta = st.Get_Ships()
         while meta.page < ceil(meta.total/20):
