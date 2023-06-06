@@ -202,10 +202,12 @@ class SpaceTraders:
         self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPCARGOS (SYMBOL varchar, GOOD varchar, UNITS integer, PRIMARY KEY (SYMBOL, GOOD));")
         self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPFUEL (SYMBOL varchar, FUEL integer, CAPACITY integer, PRIMARY KEY (SYMBOL));")
         self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPCONSUMTION (SYMBOL varchar, AMOUNT integer, DEPARTEDFROM varchar, DESTINATION varchar, FLIGHTMODE varchar, FLIGHTTIME integer, TIMESTAMP varchar, PRIMARY KEY (SYMBOL, TIMESTAMP));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS CREDITLEADERBOARD (AGENTSYMBOL varchar, CREDITS integer, TIMESTAMP varchar, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS CHARTLEADERBOARD (AGENTSYMBOL varchar, CHARTCOUNT integer, TIMESTAMP varchar, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS CREDITLEADERBOARD (AGENTSYMBOL varchar, CREDITS integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS CHARTLEADERBOARD (AGENTSYMBOL varchar, CHARTCOUNT integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS LBCREDITS (AGENTSYMBOL varchar, CREDITS integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS LBCHARTS (AGENTSYMBOL varchar, CHARTCOUNT integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
         self.cur.execute("CREATE TABLE IF NOT EXISTS FACTIONS (SYMBOL varchar NOT NULL, name varchar, description varchar, headquarters varchar,  traits varchar[], PRIMARY KEY (SYMBOL));")
-        self.cur.execute("""CREATE TABLE IF NOT EXISTS SURVEYS (signature varchar,symbol varchar,deposits varchar[],expiration varchar,size varchar,"timestamp" timestamp without time zone,PRIMARY KEY (signature))""")
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS SURVEYS (signature varchar,symbol varchar,deposits varchar[],expiration varchar,size varchar,"timestamp" timestamp without time zone,PRIMARY KEY (signature,timestamp))""")
         self.cur.execute("CREATE TABLE IF NOT EXISTS EXTRACTIONS (shipSymbol varchar,waypointsymbol varchar,symbol varchar,units integer, survey varchar, timestamp timestamp without time zone)")
         self.cur.execute("CREATE TABLE IF NOT EXISTS requests(before timestamp without time zone,after timestamp without time zone,duration numeric,method varchar,endpoint varchar,status_code integer,error_code integer)")
         self.cur.execute("CREATE TABLE IF NOT EXISTS credits(time timestamp without time zone,agent varchar,credits integer)")
@@ -519,7 +521,7 @@ class SpaceTraders:
                                 ]
                             )
                         self.cur.execute(
-                            f"""INSERT INTO CREDITLEADERBOARD (AGENTSYMBOL, CREDITS, TIMESTAMP)
+                            f"""INSERT INTO LBCREDITS (AGENTSYMBOL, CREDITS, TIMESTAMP)
                             VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])}
                             ON CONFLICT (AGENTSYMBOL, TIMESTAMP) DO NOTHING""",
                             list(temp),
@@ -537,7 +539,7 @@ class SpaceTraders:
                                     ]
                                 )
                             self.cur.execute(
-                                f"""INSERT INTO CHARTLEADERBOARD (AGENTSYMBOL, CHARTCOUNT, TIMESTAMP)
+                                f"""INSERT INTO LBCHARTS (AGENTSYMBOL, CHARTCOUNT, TIMESTAMP)
                                 VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])}
                                 ON CONFLICT (AGENTSYMBOL, TIMESTAMP) DO NOTHING""",
                                 list(temp),
@@ -608,11 +610,14 @@ class SpaceTraders:
                                 ]
                             )
                         if len(temp)>1:
-                            self.cur.execute(
-                                f"""INSERT INTO SURVEYS (signature,symbol,deposits,expiration,size,timestamp)
-                                    VALUES {','.join([f'(%s, %s, %s, %s, %s, %s)' for _ in range(int(len(temp)/6))])}""",
-                                list(temp),
-                            )
+                            try:
+                                self.cur.execute(
+                                    f"""INSERT INTO SURVEYS (signature,symbol,deposits,expiration,size,timestamp)
+                                        VALUES {','.join([f'(%s, %s, %s, %s, %s, %s)' for _ in range(int(len(temp)/6))])}""",
+                                    list(temp),
+                                )
+                            except:
+                                self.logger.warning(f"did not add survey to db: {temp}")
                     elif q_obj.type == Queue_Obj_Type.SURVEY_DEPLETED:
                         data: tuple = q_obj.data
 
@@ -677,7 +682,7 @@ class SpaceTraders:
         try:
             with self.req_lock:
                 r = self.req_and_log(url, method, data, json)
-                while r.status_code == 429:
+                while r.status_code in [408,429]:
                     r = self.req_and_log(url, method, data, json)
             return r
         except RemoteDisconnected as e:
@@ -728,7 +733,8 @@ class SpaceTraders:
                     self.surveys.pop(k)
 
     def get_surveys_for(self, waypointSymbol):
-        keys = [k for k in self.surveys.keys() if self.surveys[k].symbol == waypointSymbol]
+        with self.survey_lock:
+            keys = [k for k in self.surveys.keys() if self.surveys[k].symbol == waypointSymbol]
         return keys
 
     def get_survey_worth(self, survey: Survey):
@@ -737,7 +743,8 @@ class SpaceTraders:
         return value
 
     def sort_surveys_by_worth(self, surveys: list[str]):
-        sortd = [(k, self.get_survey_worth(self.surveys[k])) for k in surveys]
+        with self.survey_lock:
+            sortd = [(k, self.get_survey_worth(self.surveys[k])) for k in surveys]
         sortd.sort(key=lambda x: x[1], reverse=True)
         return sortd
     
@@ -1269,8 +1276,9 @@ class SpaceTraders:
                     if self.use_db:
                         with self.db_lock:
                             self.db_queue.append(Queue_Obj(Queue_Obj_Type.SURVEY_DEPLETED,(datetime.utcnow(),survey.signature))) 
-                if survey.signature in self.surveys:
-                    self.surveys.pop(survey.signature)
+                with self.survey_lock:
+                    if survey.signature in self.surveys:
+                        self.surveys.pop(survey.signature)
                 return (None,None,None)
             else:
                 raise Exception(j)  # TODO raise error
