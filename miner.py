@@ -112,12 +112,12 @@ ships = []
 disallowed_ships = ["FEBA66-1"]
 while len(st.db_queue) > 0 or running:
     if i >= 20:
+        ships = [t.name for t in threading.enumerate()]
         _,meta = st.Get_Ships()
         while meta.page < ceil(meta.total/20):
             _,meta = st.Get_Ships(meta.page+1)
         for ship in list(st.ships.values()):
             if ship.symbol not in ships:
-                ships.append(ship.symbol)
                 if ship.frame.symbol == ShipFrameType.FRAME_MINER and ship.symbol not in disallowed_ships:
                     print([m.symbol for m in ship.mounts])
                     mounts = [m.symbol.name for m in ship.mounts]
