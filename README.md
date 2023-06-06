@@ -20,8 +20,10 @@ py api.py
 - [ ] add agent to database
 - [x] add extractions to database
 - [ ] add transactions to database
-- [ ] add new endpoints
-
+- [x] add new endpoints
+- [ ] shipyards: transactions
+- [ ] shipyardsships: requirements
+- [x] shipyards, shipyardsships with mounts etc
 
 ## Generator 
 - implement enums

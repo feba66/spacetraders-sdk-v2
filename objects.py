@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional
 from enums import (
     ContractType,
@@ -595,6 +596,14 @@ class MarketTransaction:
         self.tradeSymbol = data["tradeSymbol"]
         self.totalPrice = data["totalPrice"]
 
+@dataclass
+class Transaction:
+    timestamp: str
+    totalPrice: int
+
+    def __init__(self, data) -> None:
+        self.timestamp = data["timestamp"]
+        self.totalPrice = data["totalPrice"]
 
 @dataclass
 class MarketTradeGood:
@@ -701,13 +710,23 @@ class Survey:
     signature: str
     expiration: str
     deposits: list[SurveyDeposit]
+    timestamp:Optional[datetime]
 
-    def __init__(self, data) -> None:
-        self.symbol = data["symbol"]
-        self.size = SurveySize[data["size"]]
-        self.signature = data["signature"]
-        self.expiration = data["expiration"]
-        self.deposits = [SurveyDeposit(d) for d in data["deposits"]]
+    def __init__(self, symbol,size=None,signature=None,expiration=None,deposits=None,timestamp=None) -> None:
+        if size == None:
+            self.symbol = symbol["symbol"]
+            self.size = SurveySize[symbol["size"]]
+            self.signature = symbol["signature"]
+            self.expiration = symbol["expiration"]
+            self.deposits = [SurveyDeposit(d) for d in symbol["deposits"]]
+        else:
+            self.symbol=symbol
+            self.size=size
+            self.signature=signature
+            self.expiration=expiration
+            self.deposits=deposits
+            self.timestamp=timestamp
+            
 
     def dict(self):
         return {

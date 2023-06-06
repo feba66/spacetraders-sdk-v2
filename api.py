@@ -33,10 +33,12 @@ from objects import (
     Ship,
     ShipCargo,
     ShipFuel,
+    ShipMount,
     ShipNav,
     Shipyard,
     Survey,
     System,
+    Transaction,
     Waypoint,
     WaypointTraitSymbols,
     ShipNavStatus,
@@ -45,23 +47,24 @@ from objects import (
 
 
 class Queue_Obj_Type(Enum):
-    WAYPOINT = 1
-    SYSTEM = 2
-    MARKET = 3
-    SHIPYARD = 4
-    SHIP = 5
-    CONSUMPTION = 6
-    LEADERBOARD = 7
-    SHIPNAV = 8
-    SHIPFUEL = 9
-    SHIPCARGO = 10
-    FACTION = 11
-    REQUEST_METRIC = 12
-    TRANSACTION = 13
-    EXTRACTION = 14
-    SURVEY = 15
-    SURVEY_DEPLETED = 16
-    RESET_WIPE = 17
+    CONSUMPTION = 1
+    EXTRACTION = 2
+    FACTION = 3
+    LEADERBOARD = 4
+    MARKET = 5
+    REQUEST_METRIC = 6
+    RESET_WIPE = 7
+    SHIP = 8
+    SHIPCARGO = 9
+    SHIPFUEL = 10
+    SHIPNAV = 11
+    SHIPYARD = 12
+    SURVEY = 13
+    SURVEY_DEPLETED = 14
+    SYSTEM = 15
+    TRANSACTION = 16
+    WAYPOINT = 17
+    JUMPGATE = 18
 
 
 @dataclass
@@ -185,14 +188,14 @@ class SpaceTraders:
         self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPMOUNT (SYMBOL SHIPMOUNTTYPE PRIMARY KEY,NAME VARCHAR,DESCRIPTION VARCHAR,STRENGTH INT)")
         self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPYARDSHIP (TYPE SHIPTYPE ,waypointsymbol varchar ,ENGINE SHIPENGINETYPE,REACTOR SHIPREACTORTYPE,NAME VARCHAR,DESCRIPTION VARCHAR,MOUNTS SHIPMOUNTTYPE[],PURCHASEPRICE INT,MODULES SHIPMODULETYPE[],FRAME SHIPFRAMETYPE, primary key (TYPE,waypointsymbol))")
         self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPYARDTRANSACTION (WAYPOINTSYMBOL VARCHAR,SHIPSYMBOL VARCHAR,PRICE INT,AGENTSYMBOL VARCHAR,TIMESTAMP TIMESTAMP WITHOUT TIME ZONE,PRIMARY KEY (WAYPOINTSYMBOL,TIMESTAMP))")
-        
+        self.cur.execute("CREATE TABLE IF NOT EXISTS JUMPGATECONNECTIONS (WAYPOINTSYMBOL VARCHAR, CONNECTIONS VARCHAR[], PRIMARY KEY (WAYPOINTSYMBOL))")
         
         self.cur.execute("CREATE TABLE IF NOT EXISTS waypoints (systemSymbol varchar, symbol varchar PRIMARY KEY, type varchar, x integer,y integer,orbitals varchar[],traits varchar[],chart varchar,faction varchar);")
         self.cur.execute("CREATE TABLE IF NOT EXISTS systems (symbol varchar PRIMARY KEY, type varchar, x integer, y integer);")
         self.cur.execute("CREATE TABLE IF NOT EXISTS markets (symbol varchar, good varchar, type varchar, PRIMARY KEY (symbol, good, type));")
         self.cur.execute("CREATE TABLE IF NOT EXISTS shipyards (symbol varchar, shiptype varchar, PRIMARY KEY (symbol, shiptype));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS prices (waypointsymbol varchar, symbol varchar, supply varchar, purchase integer, sell integer,tradevolume integer,timestamp varchar, PRIMARY KEY (waypointsymbol, symbol,timestamp));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS transactions (WAYPOINTSYMBOL varchar, SHIPSYMBOL varchar, TRADESYMBOL varchar, TYPE varchar, UNITS integer, PRICEPERUNIT integer, TOTALPRICE integer, timestamp varchar, PRIMARY KEY (WAYPOINTSYMBOL,TRADESYMBOL,SHIPSYMBOL, timestamp));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS prices (waypointsymbol varchar, symbol varchar, supply varchar, purchase integer, sell integer,tradevolume integer,timestamp timestamp without time zone, PRIMARY KEY (waypointsymbol, symbol,timestamp));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS transactions (WAYPOINTSYMBOL varchar, SHIPSYMBOL varchar, TRADESYMBOL varchar, TYPE varchar, UNITS integer, PRICEPERUNIT integer, TOTALPRICE integer, timestamp timestamp without time zone, PRIMARY KEY (WAYPOINTSYMBOL,TRADESYMBOL,SHIPSYMBOL, timestamp));")
 
         # region reworked tables
         self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPS (SYMBOL varchar NOT NULL, faction varchar, ROLE varchar, FRAME varchar,  ENGINE varchar,  SPEED varchar,  MODULES varchar[],  MOUNTS varchar[],  cargo_capacity integer, PRIMARY KEY (SYMBOL));")
@@ -200,10 +203,12 @@ class SpaceTraders:
         self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPCARGOS (SYMBOL varchar, GOOD varchar, UNITS integer, PRIMARY KEY (SYMBOL, GOOD));")
         self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPFUEL (SYMBOL varchar, FUEL integer, CAPACITY integer, PRIMARY KEY (SYMBOL));")
         self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPCONSUMTION (SYMBOL varchar, AMOUNT integer, DEPARTEDFROM varchar, DESTINATION varchar, FLIGHTMODE varchar, FLIGHTTIME integer, TIMESTAMP varchar, PRIMARY KEY (SYMBOL, TIMESTAMP));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS CREDITLEADERBOARD (AGENTSYMBOL varchar, CREDITS integer, TIMESTAMP varchar, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS CHARTLEADERBOARD (AGENTSYMBOL varchar, CHARTCOUNT integer, TIMESTAMP varchar, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS CREDITLEADERBOARD (AGENTSYMBOL varchar, CREDITS integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS CHARTLEADERBOARD (AGENTSYMBOL varchar, CHARTCOUNT integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS LBCREDITS (AGENTSYMBOL varchar, CREDITS integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS LBCHARTS (AGENTSYMBOL varchar, CHARTCOUNT integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
         self.cur.execute("CREATE TABLE IF NOT EXISTS FACTIONS (SYMBOL varchar NOT NULL, name varchar, description varchar, headquarters varchar,  traits varchar[], PRIMARY KEY (SYMBOL));")
-        self.cur.execute("""CREATE TABLE IF NOT EXISTS SURVEYS (signature varchar,symbol varchar,deposits varchar[],expiration varchar,size varchar,"timestamp" timestamp without time zone,PRIMARY KEY (signature))""")
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS SURVEYS (signature varchar,symbol varchar,deposits varchar[],expiration varchar,size varchar,"timestamp" timestamp without time zone,PRIMARY KEY (signature,timestamp))""")
         self.cur.execute("CREATE TABLE IF NOT EXISTS EXTRACTIONS (shipSymbol varchar,waypointsymbol varchar,symbol varchar,units integer, survey varchar, timestamp timestamp without time zone)")
         self.cur.execute("CREATE TABLE IF NOT EXISTS requests(before timestamp without time zone,after timestamp without time zone,duration numeric,method varchar,endpoint varchar,status_code integer,error_code integer)")
         self.cur.execute("CREATE TABLE IF NOT EXISTS credits(time timestamp without time zone,agent varchar,credits integer)")
@@ -517,7 +522,7 @@ class SpaceTraders:
                                 ]
                             )
                         self.cur.execute(
-                            f"""INSERT INTO CREDITLEADERBOARD (AGENTSYMBOL, CREDITS, TIMESTAMP)
+                            f"""INSERT INTO LBCREDITS (AGENTSYMBOL, CREDITS, TIMESTAMP)
                             VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])}
                             ON CONFLICT (AGENTSYMBOL, TIMESTAMP) DO NOTHING""",
                             list(temp),
@@ -535,7 +540,7 @@ class SpaceTraders:
                                     ]
                                 )
                             self.cur.execute(
-                                f"""INSERT INTO CHARTLEADERBOARD (AGENTSYMBOL, CHARTCOUNT, TIMESTAMP)
+                                f"""INSERT INTO LBCHARTS (AGENTSYMBOL, CHARTCOUNT, TIMESTAMP)
                                 VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])}
                                 ON CONFLICT (AGENTSYMBOL, TIMESTAMP) DO NOTHING""",
                                 list(temp),
@@ -606,12 +611,14 @@ class SpaceTraders:
                                 ]
                             )
                         if len(temp)>1:
-                            self.cur.execute(
-                                f"""INSERT INTO SURVEYS (signature,symbol,deposits,expiration,size,timestamp)
-                                    VALUES {','.join([f'(%s, %s, %s, %s, %s, %s)' for _ in range(int(len(temp)/6))])}""",
-                                list(temp),
-                            )
-                        self.conn.commit()
+                            try:
+                                self.cur.execute(
+                                    f"""INSERT INTO SURVEYS (signature,symbol,deposits,expiration,size,timestamp)
+                                        VALUES {','.join([f'(%s, %s, %s, %s, %s, %s)' for _ in range(int(len(temp)/6))])}""",
+                                    list(temp),
+                                )
+                            except:
+                                self.logger.warning(f"did not add survey to db: {temp}")
                     elif q_obj.type == Queue_Obj_Type.SURVEY_DEPLETED:
                         data: tuple = q_obj.data
 
@@ -635,7 +642,17 @@ class SpaceTraders:
                         cur = tmp.cursor()
                         
                         cur.execute(f"""IALTER DATABASE test RENAME TO test_{datetime.utcnow().isoformat("YYYYMMDD")};""",)
-                        tmp.commit()
+                    elif q_obj.type == Queue_Obj_Type.JUMPGATE:
+                        wp,jumpgate = q_obj.data
+                        temp = [wp,[cs.symbol for cs in jumpgate.connectedSystems]]
+                       
+                        if len(temp)>1:
+                            self.cur.execute(
+                                f"""INSERT INTO JumpGateConnections (waypointSymbol,connections)
+                                    VALUES {','.join([f'(%s, %s)' for _ in range(int(len(temp)/2))])}""",
+                                list(temp),
+                            )
+                        
                 # TODO add the msg to db
                 # TODO add the queue-ing to all functions
             else:
@@ -666,7 +683,7 @@ class SpaceTraders:
         try:
             with self.req_lock:
                 r = self.req_and_log(url, method, data, json)
-                while r.status_code == 429:
+                while r.status_code in [408,429]:
                     r = self.req_and_log(url, method, data, json)
             return r
         except RemoteDisconnected as e:
@@ -717,7 +734,8 @@ class SpaceTraders:
                     self.surveys.pop(k)
 
     def get_surveys_for(self, waypointSymbol):
-        keys = [k for k in self.surveys.keys() if self.surveys[k].symbol == waypointSymbol]
+        with self.survey_lock:
+            keys = [k for k in self.surveys.keys() if self.surveys[k].symbol == waypointSymbol]
         return keys
 
     def get_survey_worth(self, survey: Survey):
@@ -726,7 +744,8 @@ class SpaceTraders:
         return value
 
     def sort_surveys_by_worth(self, surveys: list[str]):
-        sortd = [(k, self.get_survey_worth(self.surveys[k])) for k in surveys]
+        with self.survey_lock:
+            sortd = [(k, self.get_survey_worth(self.surveys[k])) for k in surveys]
         sortd.sort(key=lambda x: x[1], reverse=True)
         return sortd
     
@@ -740,9 +759,11 @@ class SpaceTraders:
         for jg in self.jumpgates:
             if jg.startswith(wp):
                 return jg
-    def get_dist(self,a:str,b:str):
+    def get_dist_waypoints(self,a:str,b:str):
         a:Waypoint = self.waypoints[a]
         b:Waypoint = self.waypoints[b]
+        return math.sqrt((a.x-b.x)**2+(a.y-b.y)**2)
+    def get_dist(self,a,b):
         return math.sqrt((a.x-b.x)**2+(a.y-b.y)**2)
     # endregion
 
@@ -934,6 +955,9 @@ class SpaceTraders:
             return  # TODO raise error
         gate = JumpGate(data)
         self.jumpgates[waypointSymbol] = gate
+        if self.use_db:
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.JUMPGATE, (waypointSymbol,gate)))
         return gate
 
     # endregion
@@ -1253,8 +1277,9 @@ class SpaceTraders:
                     if self.use_db:
                         with self.db_lock:
                             self.db_queue.append(Queue_Obj(Queue_Obj_Type.SURVEY_DEPLETED,(datetime.utcnow(),survey.signature))) 
-                if survey.signature in self.surveys:
-                    self.surveys.pop(survey.signature)
+                with self.survey_lock:
+                    if survey.signature in self.surveys:
+                        self.surveys.pop(survey.signature)
                 return (None,None,None)
             else:
                 raise Exception(j)  # TODO raise error
@@ -1346,6 +1371,57 @@ class SpaceTraders:
     # scan systems
     # scan waypoints
     # scan ships
+    
+    def Get_Mounts(self,shipSymbol):
+        path = f"/my/ships/{shipSymbol}/mounts"
+        r = self.my_req(path, "get")
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        mounts=[]
+        for d in data:
+            mounts.append(ShipMount(d)) 
+        
+        if shipSymbol in self.ships:
+            self.ships[shipSymbol].mounts = mounts
+        return mounts
+    def Install_Mount(self,shipSymbol,symbol):
+        path = f"/my/ships/{shipSymbol}/mounts/install"
+        r = self.my_req(path, "post",data={"symbol": symbol})
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        self.agent = Agent(data["agent"])
+        cargo = ShipCargo(data["cargo"])
+        mounts=[]
+        for d in data["mounts"]:
+            mounts.append(ShipMount(d)) 
+        transaction = Transaction(data["transaction"])
+        if shipSymbol in self.ships:
+            self.ships[shipSymbol].cargo = cargo
+            self.ships[shipSymbol].mounts = mounts
+        return (mounts,cargo,transaction)
+    def Remove_Mount(self,shipSymbol,symbol):
+        path = f"/my/ships/{shipSymbol}/mounts/remove"
+        r = self.my_req(path, "post",data={"symbol": symbol})
+        j = r.json()
+        data = j["data"] if "data" in j else None
+        if data == None:
+            return  # TODO raise error
+        self.agent = Agent(data["agent"])
+        cargo = ShipCargo(data["cargo"])
+        mounts=[]
+        for d in data["mounts"]:
+            mounts.append(ShipMount(d)) 
+        transaction = Transaction(data["transaction"])
+        if shipSymbol in self.ships:
+            self.ships[shipSymbol].cargo = cargo
+            self.ships[shipSymbol].mounts = mounts
+        return (mounts,cargo,transaction)
+    
+    
     def Negotiate_Contract(self,shipSymbol):
         path = f"/my/ships/{shipSymbol}/negotiate/contract"
         r = self.my_req(path, "post")
