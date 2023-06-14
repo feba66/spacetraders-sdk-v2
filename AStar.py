@@ -26,7 +26,7 @@ class CostNode:
         self.path = path
 
 def heuristic(a,b):
-        return sqrt((a.x-b.x)**2+(a.y-b.y)**2)/1.1
+    return sqrt((a.x-b.x)**2+(a.y-b.y)**2)*.999
 
 def nodefromlist(nodename: str, list: list):
     return [x for x in list if x.name == nodename][0]

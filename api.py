@@ -767,6 +767,10 @@ class SpaceTraders:
             if jg.startswith(wp):
                 return jg
     def get_dist_waypoints(self,a:str,b:str):
+        if a not in self.waypoints:
+            self.Get_Waypoint(a)
+        if b not in self.waypoints:
+            self.Get_Waypoint(b)
         a:Waypoint = self.waypoints[a]
         b:Waypoint = self.waypoints[b]
         return math.sqrt((a.x-b.x)**2+(a.y-b.y)**2)
@@ -784,12 +788,14 @@ class SpaceTraders:
         start = ship.nav.waypointSymbol
         start_sys = self.system_from_waypoint(start)
         goal_sys = self.system_from_waypoint(goal)
-        cd = None
+        cd = self.cooldowns[ship.symbol] if ship.symbol in self.cooldowns else self.Get_Cooldown(ship.symbol)
         if start_sys!=goal_sys:
             if self.use_db:
                 if self.nodelist == []:
-                    self.cur.execute("""select * from jumpgateconnections""")
-                    gates = [(p[0],p[1]) for p in self.cur.fetchall()]
+                    with self.db_lock:
+                        self.cur.execute("""select * from jumpgateconnections""")
+                        # self.conn.commit()
+                        gates = [(p[0],p[1]) for p in self.cur.fetchall()]
                     for g in gates:
                         system = self.systems[self.system_from_waypoint(g[0])]
                         newnode = AStarNode(system.symbol, [CostNode(self.systems[cs].symbol,self.get_dist(system,self.systems[cs]),0,[]) for cs in g[1]], system.x, system.y)
@@ -1366,7 +1372,7 @@ class SpaceTraders:
             self.ships[shipSymbol].nav = nav
         cooldown = Cooldown(data["cooldown"])
         self.cooldowns[shipSymbol] = cooldown
-        self.logger.info(f"Jump: {cooldown.totalSeconds} secs for {self.get_dist_waypoints(nav.route.departure.symbol,nav.route.destination.symbol)} units")
+        self.logger.info(f"Jump: {cooldown.totalSeconds} secs for {self.get_dist(self.systems[nav.route.departure.systemSymbol],self.systems[nav.route.destination.systemSymbol])} units")
         # if self.use_db:
             # self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol])) # TODO cooldown to db
         return cooldown
