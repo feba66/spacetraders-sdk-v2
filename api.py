@@ -15,6 +15,7 @@ from pprint import pprint
 from dotenv import load_dotenv,find_dotenv
 from dataclasses import dataclass
 from enum import Enum
+from AStar import AStarSearch,AStarNode,CostNode
 from constants import FORMAT_STR
 from enums import Factions, MarketTradeGoodSupply, MarketTransactionType, ShipEngineType, ShipFrameType, ShipModuleType, ShipMountType, ShipNavFlightMode, ShipReactorType, ShipType, SystemType, TradeSymbol, WaypointType
 from feba_ratelimit import BurstyLimiter, Limiter
@@ -154,6 +155,8 @@ class SpaceTraders:
             self.t_db = threading.Thread(target=self.db_thread, name="DB_Thread")
             self.t_db.daemon = True
             self.t_db.start()
+            
+            self.nodelist = []
         # endregion
 
     def db_thread(self):
@@ -650,7 +653,7 @@ class SpaceTraders:
                         if len(temp)>1:
                             self.cur.execute(
                                 f"""INSERT INTO JumpGateConnections (waypointSymbol,connections)
-                                    VALUES {','.join([f'(%s, %s)' for _ in range(int(len(temp)/2))])}""",
+                                    VALUES {','.join([f'(%s, %s)' for _ in range(int(len(temp)/2))])} ON CONFLICT (waypointSymbol) DO NOTHING""",
                                 list(temp),
                             )
                         
@@ -770,7 +773,7 @@ class SpaceTraders:
     def get_dist(self,a,b):
         return math.sqrt((a.x-b.x)**2+(a.y-b.y)**2)
     
-    def nav_to(self, ship:Ship, goal:str, start_jg:str):# jump through one gate and nav to location
+    def nav_to(self, ship:Ship, goal:str, start_jg:str=None):# jump through one gate and nav to location
         """jump through one gate and nav to location
             Blocking!!!
         Args:
@@ -778,12 +781,34 @@ class SpaceTraders:
             goal (str): where to
             start_jg (str): via which jump gate
         """
-        if self.system_from_waypoint(ship.nav.waypointSymbol) != self.system_from_waypoint(goal):
-            if ship.nav.waypointSymbol != start_jg:
-                n,f=self.Navigate(ship.symbol,start_jg)
-                self.sleep_till(nav=n)
-            cd = self.Jump(ship.symbol,self.system_from_waypoint(goal))
+        start = ship.nav.waypointSymbol
+        start_sys = self.system_from_waypoint(start)
+        goal_sys = self.system_from_waypoint(goal)
+        cd = None
+        if start_sys!=goal_sys:
+            if self.use_db:
+                if self.nodelist == []:
+                    self.cur.execute("""select * from jumpgateconnections""")
+                    gates = [(p[0],p[1]) for p in self.cur.fetchall()]
+                    for g in gates:
+                        system = self.systems[self.system_from_waypoint(g[0])]
+                        newnode = AStarNode(system.symbol, [CostNode(self.systems[cs].symbol,self.get_dist(system,self.systems[cs]),0,[]) for cs in g[1]], system.x, system.y)
+                        self.nodelist.append(newnode)
+                res = AStarSearch(start_sys, goal_sys, self.nodelist)
+                
+                wps,_ = self.Get_Waypoints(res.path[0])
+                jg = [wp for wp in wps if self.waypoints[wp].type == WaypointType.JUMP_GATE][0]
+                if ship.nav.waypointSymbol != jg:
+                    self.Orbit(ship.symbol)
+                    n,f=self.Navigate(ship.symbol,jg)
+                    self.sleep_till(nav=n)
+                for p in res.path[1:]:
+                    self.sleep_till(cooldown=cd)
+                    cd = self.Jump(ship.symbol,p)
+                
+                
         if ship.nav.waypointSymbol != goal:
+            self.Orbit(ship.symbol)
             nav,f = self.Navigate(ship.symbol,goal)
             self.sleep_till(nav)
         
@@ -1341,6 +1366,7 @@ class SpaceTraders:
             self.ships[shipSymbol].nav = nav
         cooldown = Cooldown(data["cooldown"])
         self.cooldowns[shipSymbol] = cooldown
+        self.logger.info(f"Jump: {cooldown.totalSeconds} secs for {self.get_dist_waypoints(nav.route.departure.symbol,nav.route.destination.symbol)} units")
         # if self.use_db:
             # self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL,self.ships[shipSymbol])) # TODO cooldown to db
         return cooldown
@@ -1461,6 +1487,7 @@ class SpaceTraders:
         if data == None:
             return  # TODO raise error
         contract = Contract(data["contract"])
+        self.contracts[contract.id]=contract
         # if self.use_db:
         #     with self.db_lock:
         #         self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL, self.ships[shipSymbol]))
