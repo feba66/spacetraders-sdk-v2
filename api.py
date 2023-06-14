@@ -203,13 +203,13 @@ class SpaceTraders:
         self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPNAVS(SYMBOL varchar NOT NULL, WAYPOINTSYMBOL varchar, DEPARTURE varchar, DESTINATION varchar, ARRIVAL varchar, DEPARTURETIME varchar, STATUS varchar, FLIGHTMODE varchar, PRIMARY KEY (SYMBOL));")
         self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPCARGOS (SYMBOL varchar, GOOD varchar, UNITS integer, PRIMARY KEY (SYMBOL, GOOD));")
         self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPFUEL (SYMBOL varchar, FUEL integer, CAPACITY integer, PRIMARY KEY (SYMBOL));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPCONSUMTION (SYMBOL varchar, AMOUNT integer, DEPARTEDFROM varchar, DESTINATION varchar, FLIGHTMODE varchar, FLIGHTTIME integer, TIMESTAMP varchar, PRIMARY KEY (SYMBOL, TIMESTAMP));")
+        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPCONSUMTION (SYMBOL varchar, AMOUNT integer, DEPARTEDFROM varchar, DESTINATION varchar, FLIGHTMODE varchar, FLIGHTTIME integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (SYMBOL, TIMESTAMP));")
         # self.cur.execute("CREATE TABLE IF NOT EXISTS CREDITLEADERBOARD (AGENTSYMBOL varchar, CREDITS integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
         # self.cur.execute("CREATE TABLE IF NOT EXISTS CHARTLEADERBOARD (AGENTSYMBOL varchar, CHARTCOUNT integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
         self.cur.execute("CREATE TABLE IF NOT EXISTS LBCREDITS (AGENTSYMBOL varchar, CREDITS integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
         self.cur.execute("CREATE TABLE IF NOT EXISTS LBCHARTS (AGENTSYMBOL varchar, CHARTCOUNT integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
         self.cur.execute("CREATE TABLE IF NOT EXISTS FACTIONS (SYMBOL varchar NOT NULL, name varchar, description varchar, headquarters varchar,  traits varchar[], PRIMARY KEY (SYMBOL));")
-        self.cur.execute("""CREATE TABLE IF NOT EXISTS SURVEYS (signature varchar,symbol varchar,deposits varchar[],expiration varchar,size varchar,"timestamp" timestamp without time zone,PRIMARY KEY (signature,timestamp))""")
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS SURVEYS (signature varchar,symbol varchar,deposits varchar[],expiration varchar,size varchar,"timestamp" timestamp without time zone)""")
         self.cur.execute("CREATE TABLE IF NOT EXISTS EXTRACTIONS (shipSymbol varchar,waypointsymbol varchar,symbol varchar,units integer, survey varchar, timestamp timestamp without time zone)")
         self.cur.execute("CREATE TABLE IF NOT EXISTS requests(before timestamp without time zone,after timestamp without time zone,duration numeric,method varchar,endpoint varchar,status_code integer,error_code integer)")
         self.cur.execute("CREATE TABLE IF NOT EXISTS credits(time timestamp without time zone,agent varchar,credits integer)")
@@ -684,7 +684,7 @@ class SpaceTraders:
         try:
             with self.req_lock:
                 r = self.req_and_log(url, method, data, json)
-                while r.status_code in [408,429]:
+                while r.status_code in [408,429,503]:
                     r = self.req_and_log(url, method, data, json)
             return r
         except RemoteDisconnected as e:
@@ -749,7 +749,7 @@ class SpaceTraders:
 
     def sort_surveys_by_worth(self, surveys: list[str]):
         with self.survey_lock:
-            sortd = [(k, self.get_survey_worth(self.surveys[k])) for k in surveys]
+            sortd = [(k, self.get_survey_worth(self.surveys[k])) for k in surveys if k in self.surveys]
         sortd.sort(key=lambda x: x[1], reverse=True)
         return sortd
     
@@ -769,10 +769,28 @@ class SpaceTraders:
         return math.sqrt((a.x-b.x)**2+(a.y-b.y)**2)
     def get_dist(self,a,b):
         return math.sqrt((a.x-b.x)**2+(a.y-b.y)**2)
+    
+    def nav_to(self, ship:Ship, goal:str, start_jg:str):# jump through one gate and nav to location
+        """jump through one gate and nav to location
+            Blocking!!!
+        Args:
+            ship (Ship): which ship
+            goal (str): where to
+            start_jg (str): via which jump gate
+        """
+        if self.system_from_waypoint(ship.nav.waypointSymbol) != self.system_from_waypoint(goal):
+            if ship.nav.waypointSymbol != start_jg:
+                n,f=self.Navigate(ship.symbol,start_jg)
+                self.sleep_till(nav=n)
+            cd = self.Jump(ship.symbol,self.system_from_waypoint(goal))
+        if ship.nav.waypointSymbol != goal:
+            nav,f = self.Navigate(ship.symbol,goal)
+            self.sleep_till(nav)
+        
     # endregion
 
     # region endpoints
-    def Register(self, symbol: str, faction: Factions, email: str = None, login=True):
+    def Register(self, symbol: str, faction: Factions, email: str = None, login=True,raw=False):
         path = "/register"
         if 3 > len(symbol) > 14:
             raise ValueError("symbol must be 3-14 characters long")
@@ -797,9 +815,12 @@ class SpaceTraders:
         if self.use_db:
             with self.db_lock:
                 self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (None,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
+                
+        if raw:
+            return r
         return token
 
-    def Status(self):
+    def Status(self,raw=False):
         path = "/"
         r = self.my_req(path, "get")
         
@@ -809,11 +830,15 @@ class SpaceTraders:
                     self.db_queue.append(Queue_Obj(Queue_Obj_Type.LEADERBOARD, r.json()["leaderboards"]))
             except:
                 pass
+        if raw:
+            return r
         return r
 
-    def Get_Agent(self):
+    def Get_Agent(self,raw=False):
         path = "/my/agent"
         r = self.my_req(path, "get")
+        if raw:
+            return r
         j = r.json()
         data = j["data"] if "data" in j else None
         if data == None:
@@ -1061,9 +1086,11 @@ class SpaceTraders:
 
     # endregion
     # region Factions
-    def Get_Factions(self, page=1, limit=20):
+    def Get_Factions(self, page=1, limit=20,raw=False):
         path = f"/factions?page={page}&limit={limit}"
         r = self.my_req(path, "get")
+        if raw:
+            return r
         j = r.json()
 
         meta = Meta(j["meta"]) if "meta" in j else None

@@ -18,10 +18,10 @@ if __name__ == "__main__":
     st.Login(os.getenv("TOKEN"))
     time.sleep(.3)
     st.cur.execute(
-        """select * from surveys"""
+        """select * from surveys where symbol = 'X1-AD50-85905A'"""
     )
     st.conn.commit()
-    surveys = [Survey(s[1],s[4],s[0],datetime.strptime(s[3].replace(" ","T")+"Z",FORMAT_STR),s[2],s[5]) for s in st.cur.fetchall() if s[5] > datetime(2023,6,5,12,12,50,0)]
+    surveys = [Survey(s[1],s[4],s[0],s[3],s[2],s[5]) for s in st.cur.fetchall() if s[5] > datetime(2023,6,5,12,12,50,0)]
     print(len(surveys))
     lengths = defaultdict(int)
     deposits = defaultdict(int)

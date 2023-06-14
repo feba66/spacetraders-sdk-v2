@@ -70,9 +70,23 @@ def parse(jsn,name):
         s+= f"\n    @staticmethod\n    def from_dict(dict) -> {name}:\n"
         s+= f'''        return {name}({', '.join({f'dict["{v[0]}"]{f""" if "{v[0]}" in dict else None""" if not v[1] else ""}' if not "list" in v[2] else f'[{v[2].split("[")[1][:-1]}(elem) for elem in dict["{v[0]}"]]{f""" if "{v[0]}" in dict else None""" if not v[1] else ""}' for v in vars})})'''
         s+="\n"
+    elif type == "string":
+        if "enum" in jsn:
+            imports.append("from enum import Enum")
+            s = f"""{f"{chr(10).join(imports)}"}\n\n\nclass {name}(Enum):\n"""
+            if "description" in jsn:
+                s+=f'''    """{jsn["description"]}"""\n'''
+            for en in jsn["enum"]:
+                s+=f'''    {en} = "{en}"\n'''
+    elif type == "integer":
+        s = f"""{f"{chr(10).join(imports)}"}\n\n\nclass {name}(int):\n"""
+        if "description" in jsn:
+            s+=f'''    """{jsn["description"]}{f" min:{jsn['minimum']}" if "minimum" in jsn else ""}{f" max:{jsn['maximum']}" if "maximum" in jsn else ""}"""\n'''
     else:
         print()
         print(type)
+    if s == "":
+        pass
     return s
 done,fail = 0,0
 with os.scandir('api-docs\models') as entries:

@@ -73,7 +73,7 @@ def mine(st:SpaceTraders, ship:Ship):
     elif ship.nav.status == ShipNavStatus.IN_TRANSIT:
         st.sleep_till(nav=ship.nav)
         
-    st.Orbit(ship.symbol)
+    # st.Orbit(ship.symbol)
     while True:
         ship = st.ships[ship.symbol]
         if cd!=None and st.time_till(cd.expiration) > 0:
@@ -102,12 +102,11 @@ def mine(st:SpaceTraders, ship:Ship):
             time.sleep(random.randrange(1,10))
 def survey(st:SpaceTraders, ship:Ship):
     cd = st.Get_Cooldown(ship.symbol)
-    if ship.nav.waypointSymbol != "X1-AD50-85905A":
-        if ship.nav.status != ShipNavStatus.IN_TRANSIT:
-            nav,_ = st.Navigate(ship.symbol,"X1-AD50-85905A")
-        st.sleep_till(nav=nav)
     if ship.nav.status == ShipNavStatus.IN_TRANSIT:
         st.sleep_till(nav=ship.nav)
+    if ship.nav.waypointSymbol != "X1-AD50-85905A":
+        nav,_ = st.Navigate(ship.symbol,"X1-AD50-85905A")
+        st.sleep_till(nav=nav)
     st.Orbit(ship.symbol)
     while True:
         ship = st.ships[ship.symbol]
@@ -115,8 +114,32 @@ def survey(st:SpaceTraders, ship:Ship):
             st.sleep_till(cooldown=cd)
         
         _,cd = st.Create_Survey(ship.symbol)
+def new_surveyor(st: SpaceTraders,ship: Ship):
+    global ore_hound_system_jump_gate,assembly_place,storage_ship
+    if st.system_from_waypoint(ship.nav.waypointSymbol) != st.system_from_waypoint(assembly_place):
+        st.nav_to(ship,assembly_place,ore_hound_system_jump_gate)
+    elif ship.nav.waypointSymbol != assembly_place:
+        nav,f = st.Navigate(ship.symbol,assembly_place)
+        st.sleep_till(nav)
+    st.Dock(ship.symbol)
+    st.Transfer(storage_ship,"MOUNT_SURVEYOR_II",3,ship.symbol)
+    st.Remove_Mount(ship.symbol,"MOUNT_SURVEYOR_I")
+    st.Remove_Mount(ship.symbol,"MOUNT_MINING_LASER_II")
+    st.Install_Mount(ship.symbol,"MOUNT_SURVEYOR_II")
+    st.Install_Mount(ship.symbol,"MOUNT_SURVEYOR_II")
+    st.Install_Mount(ship.symbol,"MOUNT_SURVEYOR_II")
+    st.Transfer(ship.symbol,"MOUNT_MINING_LASER_II",1,storage_ship)
+    st.Transfer(ship.symbol,"MOUNT_SURVEYOR_I",1,storage_ship)
+    survey(st,ship)
         
 
+storage_ship = "FEBA66-71" # has SURVEYORS MK 2 in cargo
+
+ore_hound_place = "X1-QT75-51410E" # keep a ship here
+ore_hound_system_jump_gate = "X1-QT75-34111C"
+assembly_place = "X1-AD50-96037Z" # have the storage ship here
+
+target_surveyor_count = 93
 
 threads = []
 running = True
@@ -129,6 +152,7 @@ ships = []
 disallowed_ships = ["FEBA66-1"]
 while len(st.db_queue) > 0 or running:
     if i >= 20:
+        ms,ss=0,0
         st.Get_Market("X1-AD50-85905A")
         ships = [t.name for t in threading.enumerate()]
         _,meta = st.Get_Ships()
@@ -139,15 +163,27 @@ while len(st.db_queue) > 0 or running:
                 if ship.frame.symbol == ShipFrameType.FRAME_MINER and ship.symbol not in disallowed_ships:
                     print([m.symbol for m in ship.mounts])
                     mounts = [m.symbol.name for m in ship.mounts]
-                    surveyors = "MOUNT_SURVEYOR_II" in mounts or "MOUNT_SURVEYOR_III" in mounts
-                    miners = "MOUNT_MINING_LASER_I" in mounts or "MOUNT_MINING_LASER_II" in mounts or "MOUNT_MINING_LASER_III" in mounts
-                    if surveyors and not miners:
+                    surveyors =  ["MOUNT_SURVEYOR_II","MOUNT_SURVEYOR_II","MOUNT_SURVEYOR_II"] == mounts
+                    miners = ["MOUNT_MINING_LASER_II","MOUNT_MINING_LASER_II"] == mounts
+                    if surveyors:
+                        ss+=1
                         t = threading.Thread(target=survey,name=ship.symbol,args=[st,ship])
-                    elif not surveyors and miners:
+                    elif miners:
+                        ms+=1
                         t = threading.Thread(target=mine,name=ship.symbol,args=[st,ship])
+                    else:
+                        t = threading.Thread(target=new_surveyor,name=ship.symbol,args=[st,ship])
+                    
                     
                     t.daemon=True
                     t.start()
+        # for i in range(3):
+        #     if target_surveyor_count > ss:
+        #         ss+=1
+        #         ship = st.Purchase_Ship("SHIP_ORE_HOUND",ore_hound_place)
+        #         t = threading.Thread(target=new_surveyor,name=ship.symbol,args=[st,ship])
+        #         t.daemon=True
+        #         t.start()
         i=0
         # if st.agent.credits>=500000 and meta.total<30:
         #     st.Purchase_Ship("SHIP_ORE_HOUND","X1-UY52-72027D")
