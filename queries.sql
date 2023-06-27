@@ -43,3 +43,36 @@ CREATE TABLE IF NOT EXISTS EXTRACTIONS (
     timestamp CHARACTER varying,
     PRIMARY KEY (shipSymbol,timestamp)
 )
+
+
+-- prices2 lj markets
+select waypointsymbol,prices2.symbol,supply,type,purchase,sell,tradevolume from prices2
+left join markets on markets.symbol = prices2.waypointsymbol and markets.good = prices2.symbol
+order by prices2.symbol,sell desc
+
+-- get which markets trade the good at what range to your system
+-- enter xy system cords for where youre at. If negative it should be like this: x-(-10198) or x+10198
+select systemsymbol,waypoints.symbol,good,markets.type,sqrt((systems.x-(10198))^2+(systems.y-(10079))^2) as dist from markets
+left join waypoints on waypoints.symbol = markets.symbol
+left join systems on systems.symbol = waypoints.systemsymbol
+where good ='MOUNT_MINING_LASER_II'
+order by dist
+
+-- to scan:
+select systemsymbol,waypoints.symbol,good,markets.type,sqrt((systems.x-10198)^2+(systems.y-10079)^2) as dist from markets
+left join waypoints on waypoints.symbol = markets.symbol
+left join systems on systems.symbol = waypoints.systemsymbol
+where (markets.type = 'IMPORT' or markets.type = 'EXPORT')
+and not (markets.symbol = any((select prices2.waypointsymbol from prices2
+group by prices2.waypointsymbol)))
+order by dist
+
+-- to scan but only unique waypoints
+select  systemsymbol,waypoints.symbol,sqrt((systems.x-10198)^2+(systems.y-10079)^2) as dist from markets --,waypoints.symbol,good,markets.type
+left join waypoints on waypoints.symbol = markets.symbol
+left join systems on systems.symbol = waypoints.systemsymbol
+where (markets.type = 'IMPORT' or markets.type = 'EXPORT')
+and not (markets.symbol = any((select prices2.waypointsymbol from prices2
+group by prices2.waypointsymbol)))
+group by systemsymbol,waypoints.symbol,dist
+order by dist
