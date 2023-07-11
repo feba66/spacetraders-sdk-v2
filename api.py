@@ -1,5 +1,6 @@
 from datetime import datetime
 from http.client import RemoteDisconnected
+import itertools
 import math
 from urllib3.exceptions import ProtocolError
 from requests.exceptions import ConnectionError
@@ -45,34 +46,13 @@ from objects import (
     ShipNavStatus,
     ContractDeliverGood
 )
-
-
-class Queue_Obj_Type(Enum):
-    CONSUMPTION = 1
-    EXTRACTION = 2
-    FACTION = 3
-    LEADERBOARD = 4
-    MARKET = 5
-    REQUEST_METRIC = 6
-    RESET_WIPE = 7
-    SHIP = 8
-    SHIPCARGO = 9
-    SHIPFUEL = 10
-    SHIPNAV = 11
-    SHIPYARD = 12
-    SURVEY = 13
-    SURVEY_DEPLETED = 14
-    SYSTEM = 15
-    TRANSACTION = 16
-    WAYPOINT = 17
-    JUMPGATE = 18
-
+from st_db import Queue_Obj_Type,Queue_Obj,DB
 
 @dataclass
-class Queue_Obj:
-    type: Queue_Obj_Type
-    data: object
-
+class Node:
+    name:str
+    x:int
+    y:int
 
 class SpaceTraders:
     
@@ -86,7 +66,8 @@ class SpaceTraders:
     logger: logging.Logger
 
     use_db: bool
-
+    db:DB
+    
     t_db: threading.Thread
     db_queue: list[Queue_Obj]
     db_lock: threading.Lock
@@ -103,6 +84,7 @@ class SpaceTraders:
     shipyards: dict[str, Shipyard]
     jumpgates: dict[str, JumpGate]
     cooldowns: dict[str, Cooldown]
+    waypoint_systems: dict[str, list[str]]
     surveys: dict[str, Survey]
     survey_lock = threading.Lock()
     req_lock= threading.Semaphore(1)
@@ -111,41 +93,44 @@ class SpaceTraders:
     token:str
     # endregion
 
-    def __init__(self,use_db=True) -> None:
+    def __init__(self,use_db=True,name="ST") -> None:
         load_dotenv(find_dotenv(".env"))
-
+        self.name=name
         # region inits
-        self.session = requests.session()
+        self.session = requests.Session()
         self.ships = {}
         self.contracts = {}
         self.waypoints = {}
+        self.waypoint_systems = {}
         self.systems = {}
         self.markets = {}
         self.shipyards = {}
         self.jumpgates = {}
         self.cooldowns = {}
         self.surveys = {}
+        self.factions = {}
         self.agent = Agent()
         self.token = None
+        self.cur = None
         # endregion
         # region logging
-        self.logger = logging.getLogger("SpaceTraders-" + str(threading.current_thread().native_id))
-        self.logger.setLevel(logging.DEBUG)
+        self.logger = logging.getLogger(f"SpaceTraders-{name}-{threading.current_thread().name}")
+        if not self.logger.hasHandlers():
+            self.logger.setLevel(logging.DEBUG)
+            formatter = logging.Formatter("%(asctime)s - %(thread)d - %(name)s - %(levelname)s - %(message)s")
 
-        formatter = logging.Formatter("%(asctime)s - %(thread)d - %(name)s - %(levelname)s - %(message)s")
-
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.INFO)
-        
-        fh = logging.FileHandler(os.getenv("WORKING_FOLDER")+"SpaceTraders.log", encoding="utf-8")
+            ch = logging.StreamHandler()
+            ch.setLevel(logging.INFO)
             
-        fh.setLevel(logging.DEBUG)
+            fh = logging.FileHandler(f"{os.getenv('WORKING_FOLDER')}SpaceTraders-{name}.log", encoding="utf-8")
+                
+            fh.setLevel(logging.DEBUG)
 
-        ch.setFormatter(formatter)
-        fh.setFormatter(formatter)
+            ch.setFormatter(formatter)
+            fh.setFormatter(formatter)
 
-        self.logger.addHandler(fh)
-        self.logger.addHandler(ch)
+            self.logger.addHandler(fh)
+            self.logger.addHandler(ch)
         # endregion
         # region db
         self.use_db=use_db
@@ -156,10 +141,11 @@ class SpaceTraders:
             self.t_db.daemon = True
             self.t_db.start()
             
-            self.nodelist = []
+            self.jumpgatenodelist = []
         # endregion
 
     def db_thread(self):
+        self.db = DB()
         user = os.getenv("DB_USER")
         db = os.getenv("DB")
         ip = os.getenv("IP")
@@ -168,56 +154,73 @@ class SpaceTraders:
         self.conn = psycopg2.connect(dbname=db, user=user, password=os.getenv("DB_PASSWORD"), host=ip, port=port)
         self.conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
         self.cur = self.conn.cursor()
-        self.cur.execute(f"DO $$ BEGIN CREATE TYPE MARKETTRADEGOODSUPPLY AS ENUM ({','.join([t.name_pg() for t in MarketTradeGoodSupply])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
-        self.cur.execute(f"DO $$ BEGIN CREATE TYPE MARKETTRANSACTIONTYPE AS ENUM ({','.join([t.name_pg() for t in MarketTransactionType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
-        self.cur.execute(f"DO $$ BEGIN CREATE TYPE SHIPENGINETYPE AS ENUM ({','.join([t.name_pg() for t in ShipEngineType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
-        self.cur.execute(f"DO $$ BEGIN CREATE TYPE SHIPFRAMETYPE AS ENUM ({','.join([t.name_pg() for t in ShipFrameType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
-        self.cur.execute(f"DO $$ BEGIN CREATE TYPE SHIPMOUNTTYPE AS ENUM ({','.join([t.name_pg() for t in ShipMountType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
-        self.cur.execute(f"DO $$ BEGIN CREATE TYPE ShipModuleType AS ENUM ({','.join([t.name_pg() for t in ShipModuleType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
-        self.cur.execute(f"DO $$ BEGIN CREATE TYPE SHIPNAVFLIGHTMODE AS ENUM ({','.join([t.name_pg() for t in ShipNavFlightMode])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
-        self.cur.execute(f"DO $$ BEGIN CREATE TYPE SHIPNAVSTATUS AS ENUM ({','.join([t.name_pg() for t in ShipNavStatus])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
-        self.cur.execute(f"DO $$ BEGIN CREATE TYPE SHIPREACTORTYPE AS ENUM ({','.join([t.name_pg() for t in ShipReactorType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
-        self.cur.execute(f"DO $$ BEGIN CREATE TYPE SHIPTYPE AS ENUM ({','.join([t.name_pg() for t in ShipType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
-        self.cur.execute(f"DO $$ BEGIN CREATE TYPE SYSTEMTYPE AS ENUM ({','.join([t.name_pg() for t in SystemType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
-        self.cur.execute(f"DO $$ BEGIN CREATE TYPE TRADESYMBOL AS ENUM ({','.join([t.name_pg() for t in TradeSymbol])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
-        self.cur.execute(f"DO $$ BEGIN CREATE TYPE WAYPOINTTRAITSYMBOLS AS ENUM ({','.join([t.name_pg() for t in WaypointTraitSymbols])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
-        self.cur.execute(f"DO $$ BEGIN CREATE TYPE WAYPOINTTYPE AS ENUM ({','.join([t.name_pg() for t in WaypointType])});  EXCEPTION  WHEN duplicate_object THEN null;  END $$;")
+        self.db.create_enum_type("MARKETTRADEGOODSUPPLY",MarketTradeGoodSupply)
+        self.db.create_enum_type("MARKETTRANSACTIONTYPE",MarketTransactionType)
+        self.db.create_enum_type("SHIPENGINETYPE",ShipEngineType)
+        self.db.create_enum_type("SHIPFRAMETYPE",ShipFrameType)
+        self.db.create_enum_type("SHIPMOUNTTYPE",ShipMountType)
+        self.db.create_enum_type("SHIPMODULETYPE",ShipModuleType)
+        self.db.create_enum_type("SHIPNAVFLIGHTMODE",ShipNavFlightMode)
+        self.db.create_enum_type("SHIPNAVSTATUS",ShipNavStatus)
+        self.db.create_enum_type("SHIPREACTORTYPE",ShipReactorType)
+        self.db.create_enum_type("SHIPTYPE",ShipType)
+        self.db.create_enum_type("SYSTEMTYPE",SystemType)
+        self.db.create_enum_type("TRADESYMBOL",TradeSymbol)
+        self.db.create_enum_type("WAYPOINTTRAITSYMBOLS",WaypointTraitSymbols)
+        self.db.create_enum_type("WAYPOINTTYPE",WaypointType)
+        self.db.create_tables()
+        # self.cur.execute(f"DO $$ BEGIN CREATE TYPE MARKETTRADEGOODSUPPLY AS ENUM ({','.join([t.name_pg() for t in MarketTradeGoodSupply])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        # self.cur.execute(f"DO $$ BEGIN CREATE TYPE MARKETTRANSACTIONTYPE AS ENUM ({','.join([t.name_pg() for t in MarketTransactionType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        # self.cur.execute(f"DO $$ BEGIN CREATE TYPE SHIPENGINETYPE AS ENUM ({','.join([t.name_pg() for t in ShipEngineType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        # self.cur.execute(f"DO $$ BEGIN CREATE TYPE SHIPFRAMETYPE AS ENUM ({','.join([t.name_pg() for t in ShipFrameType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        # self.cur.execute(f"DO $$ BEGIN CREATE TYPE SHIPMOUNTTYPE AS ENUM ({','.join([t.name_pg() for t in ShipMountType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        # self.cur.execute(f"DO $$ BEGIN CREATE TYPE ShipModuleType AS ENUM ({','.join([t.name_pg() for t in ShipModuleType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        # self.cur.execute(f"DO $$ BEGIN CREATE TYPE SHIPNAVFLIGHTMODE AS ENUM ({','.join([t.name_pg() for t in ShipNavFlightMode])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        # self.cur.execute(f"DO $$ BEGIN CREATE TYPE SHIPNAVSTATUS AS ENUM ({','.join([t.name_pg() for t in ShipNavStatus])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        # self.cur.execute(f"DO $$ BEGIN CREATE TYPE SHIPREACTORTYPE AS ENUM ({','.join([t.name_pg() for t in ShipReactorType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        # self.cur.execute(f"DO $$ BEGIN CREATE TYPE SHIPTYPE AS ENUM ({','.join([t.name_pg() for t in ShipType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        # self.cur.execute(f"DO $$ BEGIN CREATE TYPE SYSTEMTYPE AS ENUM ({','.join([t.name_pg() for t in SystemType])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        # self.cur.execute(f"DO $$ BEGIN CREATE TYPE TRADESYMBOL AS ENUM ({','.join([t.name_pg() for t in TradeSymbol])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        # self.cur.execute(f"DO $$ BEGIN CREATE TYPE WAYPOINTTRAITSYMBOLS AS ENUM ({','.join([t.name_pg() for t in WaypointTraitSymbols])}); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+        # self.cur.execute(f"DO $$ BEGIN CREATE TYPE WAYPOINTTYPE AS ENUM ({','.join([t.name_pg() for t in WaypointType])});  EXCEPTION  WHEN duplicate_object THEN null;  END $$;")
         
         # new tables
-        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPREQUIREMENTS (SYMBOL VARCHAR PRIMARY KEY,POWER INTEGER,CREW INTEGER,SLOTS INTEGER)")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPFRAME (SYMBOL SHIPFRAMETYPE PRIMARY KEY,MODULESLOTS INT,FUELCAPACITY INT,NAME VARCHAR,DESCRIPTION VARCHAR,MOUNTINGPOINTS INT,CONDITION INT)")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPENGINE (SYMBOL SHIPENGINETYPE PRIMARY KEY,NAME VARCHAR,DESCRIPTION VARCHAR,SPEED INT,CONDITION INT)")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPREACTOR (SYMBOL SHIPREACTORTYPE PRIMARY KEY,NAME VARCHAR,DESCRIPTION VARCHAR,POWEROUTPUT INT,CONDITION INT)")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPMODULE (SYMBOL SHIPMODULETYPE PRIMARY KEY,NAME VARCHAR,CAPACITY INT,RANGE INT,DESCRIPTION VARCHAR)")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPMOUNT (SYMBOL SHIPMOUNTTYPE PRIMARY KEY,NAME VARCHAR,DESCRIPTION VARCHAR,STRENGTH INT)")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPYARDSHIP (TYPE SHIPTYPE ,waypointsymbol varchar ,ENGINE SHIPENGINETYPE,REACTOR SHIPREACTORTYPE,NAME VARCHAR,DESCRIPTION VARCHAR,MOUNTS SHIPMOUNTTYPE[],PURCHASEPRICE INT,MODULES SHIPMODULETYPE[],FRAME SHIPFRAMETYPE, primary key (TYPE,waypointsymbol))")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPYARDTRANSACTION (WAYPOINTSYMBOL VARCHAR,SHIPSYMBOL VARCHAR,PRICE INT,AGENTSYMBOL VARCHAR,TIMESTAMP TIMESTAMP WITHOUT TIME ZONE,PRIMARY KEY (WAYPOINTSYMBOL,TIMESTAMP))")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS JUMPGATECONNECTIONS (WAYPOINTSYMBOL VARCHAR, CONNECTIONS VARCHAR[], PRIMARY KEY (WAYPOINTSYMBOL))")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPREQUIREMENTS (SYMBOL VARCHAR PRIMARY KEY,POWER INTEGER,CREW INTEGER,SLOTS INTEGER)")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPFRAME (SYMBOL SHIPFRAMETYPE PRIMARY KEY,MODULESLOTS INT,FUELCAPACITY INT,NAME VARCHAR,DESCRIPTION VARCHAR,MOUNTINGPOINTS INT,CONDITION INT)")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPENGINE (SYMBOL SHIPENGINETYPE PRIMARY KEY,NAME VARCHAR,DESCRIPTION VARCHAR,SPEED INT,CONDITION INT)")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPREACTOR (SYMBOL SHIPREACTORTYPE PRIMARY KEY,NAME VARCHAR,DESCRIPTION VARCHAR,POWEROUTPUT INT,CONDITION INT)")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPMODULE (SYMBOL SHIPMODULETYPE PRIMARY KEY,NAME VARCHAR,CAPACITY INT,RANGE INT,DESCRIPTION VARCHAR)")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPMOUNT (SYMBOL SHIPMOUNTTYPE PRIMARY KEY,NAME VARCHAR,DESCRIPTION VARCHAR,STRENGTH INT)")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPYARDSHIP (TYPE SHIPTYPE ,waypointsymbol varchar ,ENGINE SHIPENGINETYPE,REACTOR SHIPREACTORTYPE,NAME VARCHAR,DESCRIPTION VARCHAR,MOUNTS SHIPMOUNTTYPE[],PURCHASEPRICE INT,MODULES SHIPMODULETYPE[],FRAME SHIPFRAMETYPE, primary key (TYPE,waypointsymbol))")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPYARDTRANSACTION (WAYPOINTSYMBOL VARCHAR, SHIPSYMBOL VARCHAR, PRICE INT, AGENTSYMBOL VARCHAR,TIMESTAMP TIMESTAMP WITHOUT TIME ZONE,PRIMARY KEY (WAYPOINTSYMBOL,SHIPSYMBOL,AGENTSYMBOL,TIMESTAMP))")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS JUMPGATECONNECTIONS (WAYPOINTSYMBOL VARCHAR, CONNECTIONS VARCHAR[], PRIMARY KEY (WAYPOINTSYMBOL))")
         
-        self.cur.execute("CREATE TABLE IF NOT EXISTS waypoints (systemSymbol varchar, symbol varchar PRIMARY KEY, type varchar, x integer,y integer,orbitals varchar[],traits varchar[],chart varchar,faction varchar);")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS systems (symbol varchar PRIMARY KEY, type varchar, x integer, y integer);")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS markets (symbol varchar, good varchar, type varchar, PRIMARY KEY (symbol, good, type));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS shipyards (symbol varchar, shiptype varchar, PRIMARY KEY (symbol, shiptype));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS prices (waypointsymbol varchar, symbol varchar, supply varchar, purchase integer, sell integer,tradevolume integer,timestamp timestamp without time zone, PRIMARY KEY (waypointsymbol, symbol,timestamp));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS transactions (WAYPOINTSYMBOL varchar, SHIPSYMBOL varchar, TRADESYMBOL varchar, TYPE varchar, UNITS integer, PRICEPERUNIT integer, TOTALPRICE integer, timestamp timestamp without time zone, PRIMARY KEY (WAYPOINTSYMBOL,TRADESYMBOL,SHIPSYMBOL, timestamp));")
-
-        # region reworked tables
-        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPS (SYMBOL varchar NOT NULL, faction varchar, ROLE varchar, FRAME varchar,  ENGINE varchar,  SPEED varchar,  MODULES varchar[],  MOUNTS varchar[],  cargo_capacity integer, PRIMARY KEY (SYMBOL));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPNAVS(SYMBOL varchar NOT NULL, WAYPOINTSYMBOL varchar, DEPARTURE varchar, DESTINATION varchar, ARRIVAL varchar, DEPARTURETIME varchar, STATUS varchar, FLIGHTMODE varchar, PRIMARY KEY (SYMBOL));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPCARGOS (SYMBOL varchar, GOOD varchar, UNITS integer, PRIMARY KEY (SYMBOL, GOOD));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPFUEL (SYMBOL varchar, FUEL integer, CAPACITY integer, PRIMARY KEY (SYMBOL));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPCONSUMTION (SYMBOL varchar, AMOUNT integer, DEPARTEDFROM varchar, DESTINATION varchar, FLIGHTMODE varchar, FLIGHTTIME integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (SYMBOL, TIMESTAMP));")
-        # self.cur.execute("CREATE TABLE IF NOT EXISTS CREDITLEADERBOARD (AGENTSYMBOL varchar, CREDITS integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
-        # self.cur.execute("CREATE TABLE IF NOT EXISTS CHARTLEADERBOARD (AGENTSYMBOL varchar, CHARTCOUNT integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS LBCREDITS (AGENTSYMBOL varchar, CREDITS integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS LBCHARTS (AGENTSYMBOL varchar, CHARTCOUNT integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS FACTIONS (SYMBOL varchar NOT NULL, name varchar, description varchar, headquarters varchar,  traits varchar[], PRIMARY KEY (SYMBOL));")
-        self.cur.execute("""CREATE TABLE IF NOT EXISTS SURVEYS (signature varchar,symbol varchar,deposits varchar[],expiration varchar,size varchar,"timestamp" timestamp without time zone)""")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS EXTRACTIONS (shipSymbol varchar,waypointsymbol varchar,symbol varchar,units integer, survey varchar, timestamp timestamp without time zone)")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS requests(before timestamp without time zone,after timestamp without time zone,duration numeric,method varchar,endpoint varchar,status_code integer,error_code integer)")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS credits(time timestamp without time zone,agent varchar,credits integer)")
-        self.cur.execute("CREATE TABLE IF NOT EXISTS surveysdepleted(time timestamp without time zone,surveyid varchar)")
-        # endregion
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS waypoints (systemSymbol varchar, symbol varchar PRIMARY KEY, type varchar, x integer,y integer,orbitals varchar[],traits varchar[],chart varchar,faction varchar);")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS systems (symbol varchar PRIMARY KEY, type varchar, x integer, y integer);")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS markets (symbol varchar, good varchar, type varchar, PRIMARY KEY (symbol, good, type));")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS shipyards (symbol varchar, shiptype varchar, PRIMARY KEY (symbol, shiptype));")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS prices (waypointsymbol varchar, symbol varchar, supply varchar, purchase integer, sell integer,tradevolume integer,timestamp timestamp without time zone, PRIMARY KEY (waypointsymbol, symbol,timestamp));")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS prices2 (waypointsymbol varchar, symbol varchar, supply varchar, purchase integer, sell integer,tradevolume integer,timestamp timestamp without time zone, PRIMARY KEY (waypointsymbol, symbol));")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS TRANSACTIONS (WAYPOINTSYMBOL VARCHAR,SHIPSYMBOL VARCHAR,TRADESYMBOL TRADESYMBOL,TYPE VARCHAR,UNITS INTEGER,PRICEPERUNIT INTEGER,TOTALPRICE INTEGER,TIMESTAMP TIMESTAMP WITHOUT TIME ZONE,PRIMARY KEY (WAYPOINTSYMBOL,TRADESYMBOL,SHIPSYMBOL,TIMESTAMP));")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS AGENTS (SYMBOL VARCHAR, ACCOUNTID VARCHAR,HEADQUARTERS VARCHAR, STARTINGFACTION VARCHAR, CREDITS VARCHAR, TOKEN VARCHAR, PRIMARY KEY (SYMBOL));")
+        
+        # # region reworked tables
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPS (SYMBOL varchar NOT NULL, faction varchar, ROLE varchar, FRAME varchar,  ENGINE varchar,  SPEED varchar,  MODULES varchar[],  MOUNTS varchar[],  cargo_capacity integer, PRIMARY KEY (SYMBOL));")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPNAVS(SYMBOL varchar NOT NULL, WAYPOINTSYMBOL varchar, DEPARTURE varchar, DESTINATION varchar, ARRIVAL varchar, DEPARTURETIME varchar, STATUS varchar, FLIGHTMODE varchar, PRIMARY KEY (SYMBOL));")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPCARGOS (SYMBOL varchar, GOOD varchar, UNITS integer, PRIMARY KEY (SYMBOL, GOOD));")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPFUEL (SYMBOL varchar, FUEL integer, CAPACITY integer, PRIMARY KEY (SYMBOL));")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS SHIPCONSUMTION (SYMBOL varchar, AMOUNT integer, DEPARTEDFROM varchar, DESTINATION varchar, FLIGHTMODE varchar, FLIGHTTIME integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (SYMBOL, TIMESTAMP));")
+        # # self.cur.execute("CREATE TABLE IF NOT EXISTS CREDITLEADERBOARD (AGENTSYMBOL varchar, CREDITS integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
+        # # self.cur.execute("CREATE TABLE IF NOT EXISTS CHARTLEADERBOARD (AGENTSYMBOL varchar, CHARTCOUNT integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS LBCREDITS (AGENTSYMBOL varchar, CREDITS integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS LBCHARTS (AGENTSYMBOL varchar, CHARTCOUNT integer, TIMESTAMP timestamp without time zone, PRIMARY KEY (AGENTSYMBOL,TIMESTAMP));")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS FACTIONS (SYMBOL varchar NOT NULL, name varchar, description varchar, headquarters varchar,  traits varchar[], PRIMARY KEY (SYMBOL));")
+        # self.cur.execute("""CREATE TABLE IF NOT EXISTS SURVEYS (signature varchar,symbol varchar,deposits varchar[],expiration varchar,size varchar,"timestamp" timestamp without time zone)""")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS EXTRACTIONS (shipSymbol varchar,waypointsymbol varchar,symbol varchar,units integer, survey varchar, timestamp timestamp without time zone)")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS requests(before timestamp without time zone,after timestamp without time zone,duration numeric,method varchar,endpoint varchar,status_code integer,error_code integer)")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS credits(time timestamp without time zone,agent varchar,credits integer)")
+        # self.cur.execute("CREATE TABLE IF NOT EXISTS surveysdepleted(time timestamp without time zone,surveyid varchar)")
+        # # endregion
 
         while True:
             tmp: list[Queue_Obj] = []
@@ -259,8 +262,8 @@ class SpaceTraders:
                             for sys in systems[
                                 i * 1000: min((i + 1) * 1000, len(systems))
                             ]:
-                                temp.extend(
-                                    [sys.symbol, sys.type.name, sys.x, sys.y])
+                                if len(sys.waypoints)>0:
+                                    temp.extend([sys.symbol, sys.type.name, sys.x, sys.y])
                             self.cur.execute(
                                 f"""INSERT INTO systems (symbol, type, x,y)
                             VALUES {','.join([f'(%s, %s, %s, %s)' for _ in range(int(len(temp)/4))])} 
@@ -283,6 +286,16 @@ class SpaceTraders:
                             VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])} 
                             ON CONFLICT (symbol, good, type) DO NOTHING""",
                                 list(temp),
+                            )
+                        if m.transactions:
+                            temp = []
+                            for tr in m.transactions:
+                                temp.extend([m.symbol,tr.shipSymbol,tr.tradeSymbol,tr.type.name,tr.units,tr.pricePerUnit,tr.totalPrice,tr.timestamp])
+                            self.cur.execute(
+                                f"""INSERT INTO TRANSACTIONS (WAYPOINTSYMBOL,SHIPSYMBOL,TRADESYMBOL,TYPE,UNITS,PRICEPERUNIT,TOTALPRICE,TIMESTAMP)
+                                    VALUES {','.join([f'(%s,%s,%s,%s,%s,%s,%s,%s)' for _ in range(int(len(temp)/8))])} 
+                                    ON CONFLICT (WAYPOINTSYMBOL,SHIPSYMBOL,TRADESYMBOL,TIMESTAMP) DO NOTHING""",
+                                temp,
                             )
                         if m.tradeGoods:
                             temp = []
@@ -322,6 +335,7 @@ class SpaceTraders:
                         yards: list[Shipyard] = q_obj.data
                         temp = []
                         for yard in [yards]:
+                            yard:Shipyard
                             for shiptype in yard.shipTypes:
                                 temp.extend([yard.symbol, shiptype.name])
                             self.cur.execute(
@@ -330,7 +344,18 @@ class SpaceTraders:
                                 ON CONFLICT (symbol,shiptype) DO NOTHING""",
                                 temp,
                             )
-                            
+                            if yard.transactions:
+                                temp = []
+                                for t in yard.transactions:
+                                    temp.extend([yard.symbol,t.shipSymbol,t.price,t.agentSymbol,t.timestamp])
+                                if len(temp)>0:
+                                    sql = f"""INSERT INTO SHIPYARDTRANSACTION (WAYPOINTSYMBOL, SHIPSYMBOL, PRICE, AGENTSYMBOL, TIMESTAMP)
+        VALUES {','.join([f'(%s, %s, %s, %s, %s)' for _ in range(int(len(temp)/5))])}
+        ON CONFLICT (WAYPOINTSYMBOL,SHIPSYMBOL,AGENTSYMBOL,TIMESTAMP) DO NOTHING"""
+                                    self.cur.execute(
+                                                    sql,
+                                                    list(temp),
+                                                )
                             if yard and yard.ships:
                                 temp = []
                                 for s in yard.ships:
@@ -581,12 +606,18 @@ class SpaceTraders:
                         self.conn.commit()
                     elif q_obj.type == Queue_Obj_Type.TRANSACTION:
                         data: tuple = q_obj.data
-
-                        if len(data)>1:
+                        if len(data)>1 and data[0]:
+                            tr:MarketTransaction = data[0]
+                            self.cur.execute(
+                                f"""INSERT INTO TRANSACTIONS (WAYPOINTSYMBOL,SHIPSYMBOL,TRADESYMBOL,TYPE,UNITS,PRICEPERUNIT,TOTALPRICE,TIMESTAMP)
+                                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                                [data[1],tr.shipSymbol,tr.tradeSymbol,tr.type.name,tr.units,tr.pricePerUnit,tr.totalPrice,tr.timestamp],
+                            )
+                        if len(data)>2:
                             self.cur.execute(
                                 f"""INSERT INTO CREDITS (TIME,AGENT,CREDITS)
                                     VALUES (%s,%s,%s)""",
-                                list(data[1]),
+                                list(data[2]),
                             )
                         self.conn.commit()
                     elif q_obj.type == Queue_Obj_Type.EXTRACTION:
@@ -647,34 +678,47 @@ class SpaceTraders:
                         
                         cur.execute(f"""IALTER DATABASE test RENAME TO test_{datetime.utcnow().isoformat("YYYYMMDD")};""",)
                     elif q_obj.type == Queue_Obj_Type.JUMPGATE:
-                        wp,jumpgate = q_obj.data
-                        temp = [wp,[cs.symbol for cs in jumpgate.connectedSystems]]
-                       
-                        if len(temp)>1:
-                            self.cur.execute(
-                                f"""INSERT INTO JumpGateConnections (waypointSymbol,connections)
-                                    VALUES {','.join([f'(%s, %s)' for _ in range(int(len(temp)/2))])} ON CONFLICT (waypointSymbol) DO NOTHING""",
-                                list(temp),
-                            )
+                        self.db.insert_jumpgates(q_obj.data)
+                        # wp,jumpgate = q_obj.data
+                        # temp = [wp,[cs.symbol for cs in jumpgate.connectedSystems]]
+
+                        # if len(temp)>1:
+                        #     self.cur.execute(
+                        #         f"""INSERT INTO JumpGateConnections (waypointSymbol,connections)
+                        #             VALUES {','.join([f'(%s, %s)' for _ in range(int(len(temp)/2))])} ON CONFLICT (waypointSymbol) DO NOTHING""",
+                        #         list(temp),
+                        #     )
+                    elif q_obj.type == Queue_Obj_Type.AGENT:
+                        data: tuple = q_obj.data
+                        self.db.insert_agent(data)
+                        # self.cur.execute(
+                        #     f"""INSERT INTO AGENTS (SYMBOL, ACCOUNTID, HEADQUARTERS, STARTINGFACTION, CREDITS, TOKEN)
+                        #         VALUES (%s,%s,%s,%s,%s,%s)
+                        #         ON CONFLICT (SYMBOL) DO UPDATE SET CREDITS=excluded.CREDITS""",
+                        #     list(data),
+                        # )
                         
                 # TODO add the msg to db
                 # TODO add the queue-ing to all functions
             else:
                 time.sleep(0.01)
 
-    @BurstyLimiter(Limiter(2,1.05),Limiter(10,10.5))
+    # @BurstyLimiter(Limiter(2,1.05),Limiter(10,10.5))
     def req_and_log(self, url:str, method:str, data=None, json=None):
         # before after duration method endpoint status_code error_code
         before = datetime.utcnow()
         r = self.session.request(method, self.SERVER_URL + url, data=data, json=json)
         after = datetime.utcnow()
         duration = (after-before).total_seconds()
+        # self.logger.info(f"{before} {after} {duration}")
         if self.use_db:
             with self.db_lock:
-                try:
-                    j = r.json()
-                except:
-                    j= None
+                j= None
+                if len(r.text)>0:
+                    try:
+                        j = r.json()
+                    except:
+                        pass
                 self.db_queue.append(Queue_Obj(Queue_Obj_Type.REQUEST_METRIC, (before,after,duration,method,url,r.status_code,(j["error"]["code"] if "error" in j else None) if j else None)))
         
         self.logger.info(f"{r.request.method} {r.request.url} {r.status_code}")
@@ -685,10 +729,10 @@ class SpaceTraders:
     # @ratelimit.limits(calls=3, period=1)
     def my_req(self, url, method, data=None, json=None):
         try:
-            with self.req_lock:
+            # with self.req_lock:
+            r = self.req_and_log(url, method, data, json)
+            while r.status_code in [408,429,503]:
                 r = self.req_and_log(url, method, data, json)
-                while r.status_code in [408,429,503]:
-                    r = self.req_and_log(url, method, data, json)
             return r
         except RemoteDisconnected as e:
             pass
@@ -700,6 +744,13 @@ class SpaceTraders:
         return self.my_req(url, method, data, json)
         # TODO add monitoring, measure time of the requests and send them to the db aswell
 
+    def exit(self):
+        if self.use_db:
+            while len(self.db_queue) > 0:
+                time.sleep(2)
+        
+        print("done")
+        exit()
 
     def reset_connection(self):
         time.sleep(5)
@@ -771,43 +822,71 @@ class SpaceTraders:
             self.Get_Waypoint(a)
         if b not in self.waypoints:
             self.Get_Waypoint(b)
-        a:Waypoint = self.waypoints[a]
-        b:Waypoint = self.waypoints[b]
-        return math.sqrt((a.x-b.x)**2+(a.y-b.y)**2)
-    def get_dist(self,a,b):
+        a = self.waypoints[a]
+        b = self.waypoints[b]
+        return self.get_dist(a,b)
+    def get_dist_systems(self,a:str,b:str):
+        if a not in self.systems:
+            self.Get_Waypoint(a)
+        if b not in self.systems:
+            self.Get_Waypoint(b)
+        a = self.systems[a]
+        b = self.systems[b]
+        return self.get_dist(a,b)
+    def get_dist(self,a,b) -> float:
+        """gets distance between object that have x and y variables
+        if x or y does not exist: bonfire!
+
+        Args:
+            a (Any): Object 1
+            b (Any): Object 2
+
+        Returns:
+            float: eucledian distance
+        """
         return math.sqrt((a.x-b.x)**2+(a.y-b.y)**2)
     
-    def nav_to(self, ship:Ship, goal:str, start_jg:str=None):# jump through one gate and nav to location
+    def nav_to(self, ship:Ship, goal:str):# jump through one gate and nav to location
         """jump through one gate and nav to location
             Blocking!!!
         Args:
             ship (Ship): which ship
             goal (str): where to
-            start_jg (str): via which jump gate
         """
+        if ship.nav.waypointSymbol == goal:
+            return
         start = ship.nav.waypointSymbol
         start_sys = self.system_from_waypoint(start)
         goal_sys = self.system_from_waypoint(goal)
         cd = self.cooldowns[ship.symbol] if ship.symbol in self.cooldowns else self.Get_Cooldown(ship.symbol)
+        self.sleep_till(ship.nav)
+        self.sleep_till(cooldown=cd)
         if start_sys!=goal_sys:
             if self.use_db:
-                if self.nodelist == []:
+                if self.jumpgatenodelist == []:
                     with self.db_lock:
-                        self.cur.execute("""select * from jumpgateconnections""")
-                        # self.conn.commit()
-                        gates = [(p[0],p[1]) for p in self.cur.fetchall()]
+                        try:
+                            self.cur.execute("""select * from jumpgateconnections""")
+                            # self.conn.commit()
+                            gates = [(p[0],p[1]) for p in self.cur.fetchall()]
+                        except:
+                            
+                            self.cur.execute("""select * from jumpgateconnections""")
+                            # self.conn.commit()
+                            gates = [(p[0],p[1]) for p in self.cur.fetchall()]
                     for g in gates:
                         system = self.systems[self.system_from_waypoint(g[0])]
                         newnode = AStarNode(system.symbol, [CostNode(self.systems[cs].symbol,self.get_dist(system,self.systems[cs]),0,[]) for cs in g[1]], system.x, system.y)
-                        self.nodelist.append(newnode)
-                res = AStarSearch(start_sys, goal_sys, self.nodelist)
-                
+                        self.jumpgatenodelist.append(newnode)
+                res = AStarSearch(start_sys, goal_sys, self.jumpgatenodelist)
+                pprint(res)
                 wps,_ = self.Get_Waypoints(res.path[0])
                 jg = [wp for wp in wps if self.waypoints[wp].type == WaypointType.JUMP_GATE][0]
                 if ship.nav.waypointSymbol != jg:
                     self.Orbit(ship.symbol)
-                    n,f=self.Navigate(ship.symbol,jg)
+                    n,f =self.Navigate(ship.symbol,jg)
                     self.sleep_till(nav=n)
+                self.Orbit(ship.symbol)
                 for p in res.path[1:]:
                     self.sleep_till(cooldown=cd)
                     cd = self.Jump(ship.symbol,p)
@@ -818,6 +897,97 @@ class SpaceTraders:
             nav,f = self.Navigate(ship.symbol,goal)
             self.sleep_till(nav)
         
+    def nav_to_dry(self, start:str, goal:str,speed:int=30):
+        """
+            
+        Args:
+            ship (Ship): which ship
+            goal (str): where to
+        """
+        steps = []
+        fuel = 0
+        t = 0
+        start_sys = self.system_from_waypoint(start)
+        goal_sys = self.system_from_waypoint(goal)
+        if start_sys==goal_sys:
+            d=self.get_dist(self.waypoints[goal],self.waypoints[start])
+            fuel+=round(d)
+            t+=round(round(d)*15/speed+15)
+            steps.append(("NAV",goal,d))
+            
+        else:
+            if self.use_db:
+                if self.jumpgatenodelist == []:
+                    with self.db_lock:
+                        self.cur.execute("""select * from jumpgateconnections""")
+                        # self.conn.commit()
+                        gates = [(p[0],p[1]) for p in self.cur.fetchall()]
+                    for g in gates:
+                        system = self.systems[self.system_from_waypoint(g[0])]
+                        newnode = AStarNode(system.symbol, [CostNode(self.systems[cs].symbol,self.get_dist(system,self.systems[cs]),0,[]) for cs in g[1]], system.x, system.y)
+                        self.jumpgatenodelist.append(newnode)
+                res = AStarSearch(start_sys, goal_sys, self.jumpgatenodelist)
+                pprint(res)
+                if res.path[0] not in self.waypoint_systems:
+                    wps,_ = self.Get_Waypoints(res.path[0])
+                    self.waypoint_systems[res.path[0]]=wps
+                else:
+                    wps = self.waypoint_systems[res.path[0]]
+                jg = [wp for wp in wps if self.waypoints[wp].type == WaypointType.JUMP_GATE][0]
+                if start != jg:
+                    d=self.get_dist(self.waypoints[jg],self.waypoints[start])
+                    fuel+=round(d)
+                    t+=round(round(d)*15/speed+15)
+                    steps.append(("NAV",start,jg,d))
+                    start=jg
+                
+                
+                for p in res.path[1:]:
+                    if p not in self.waypoint_systems:
+                        wps,_ = self.Get_Waypoints(p)
+                        self.waypoint_systems[p]=wps
+                    else:
+                        wps = self.waypoint_systems[p]
+                    
+                    jg = [wp for wp in wps if self.waypoints[wp].type == WaypointType.JUMP_GATE][0]
+                    d=self.get_dist(self.systems[p],self.systems[start_sys])
+                    t+=round(d/10)
+                    steps.append(("JUM",start_sys,p,d))
+                    start_sys = p
+                    start = jg
+        
+        if start != goal:
+            d=self.get_dist(self.waypoints[goal],self.waypoints[start])
+            fuel+=round(d)
+            t+=round(round(d)*15/speed+15)
+            steps.append(("NAV",start,goal,d))
+        return (fuel,t,steps)
+    
+    def tsp0(self,points):
+        best = None
+        best_cost= 9e999999 # basically infinitely big
+        for p in itertools.permutations(points):
+            cost = 0
+            # path=[p[0].name]
+            for i,n in enumerate(p):
+                n2 = p[i+1] if len(p)-1>i else p[0]
+                d = self.get_dist(n,n2)
+                t,f = self.nav_cost(30,d,ShipNavFlightMode.CRUISE)
+                cost+=t
+                # path.append(n2.name)
+            if best_cost>cost:
+                best=p
+                best_cost=cost
+            # print(f"{cost} {path}")
+        print(f"{best_cost} {best}")
+        return (best,best_cost)
+    def nav_cost(self,speed,d,mode:ShipNavFlightMode):
+        d = round(d)
+        if mode == ShipNavFlightMode.CRUISE: fuel, t = d, round(d*15/speed+15)
+        elif mode == ShipNavFlightMode.DRIFT: fuel, t = 1, round(d*150/speed+15)
+        elif mode == ShipNavFlightMode.BURN: fuel, t = 2 * d, round(d*7.5/speed+15)
+        else: fuel, t = d, round(d*15/speed+15)
+        return (t, fuel)
     # endregion
 
     # region endpoints
@@ -845,7 +1015,8 @@ class SpaceTraders:
             self.Login(token)
         if self.use_db:
             with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (None,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (None,None,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.AGENT, (self.agent.symbol,self.agent.accountId,self.agent.headquarters,self.agent.startingFaction,self.agent.credits,token)))
                 
         if raw:
             return r
@@ -877,7 +1048,8 @@ class SpaceTraders:
         self.agent = Agent(data)
         if self.use_db:
             with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (None,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (None,None,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.AGENT, (self.agent.symbol,self.agent.accountId,self.agent.headquarters,self.agent.startingFaction,self.agent.credits,self.token)))
         return self.agent
 
     # region Systems
@@ -1071,7 +1243,8 @@ class SpaceTraders:
         self.contracts[contract.id] = contract
         if self.use_db:
             with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (None,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (None,None,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.AGENT, (self.agent.symbol,self.agent.accountId,self.agent.headquarters,self.agent.startingFaction,self.agent.credits,self.token)))
         #     self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
         return contract
 
@@ -1111,7 +1284,8 @@ class SpaceTraders:
         self.contracts[contract.id] = contract
         if self.use_db:
             with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (None,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (None,None,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.AGENT, (self.agent.symbol,self.agent.accountId,self.agent.headquarters,self.agent.startingFaction,self.agent.credits,self.token)))
             #     self.db_queue.append(Queue_Obj(Queue_Obj_Type.CONTRACT,contracts))
         return contract
 
@@ -1135,7 +1309,7 @@ class SpaceTraders:
             self.factions[faction.symbol] = faction
         if self.use_db:
             with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.Faction, factions))
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.FACTION, factions))
         return (factions, meta)
 
     def Get_Faction(self, factionSymbol):
@@ -1151,7 +1325,7 @@ class SpaceTraders:
         self.factions[faction.symbol] = faction
         if self.use_db:
             with self.db_lock:
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.Faction, [faction]))
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.FACTION, [faction]))
         return faction
 
     # endregion
@@ -1206,11 +1380,14 @@ class SpaceTraders:
         if self.use_db:
             with self.db_lock:
                 self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIP, [ship]))
-                self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (None,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (None,None,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.AGENT, (self.agent.symbol,self.agent.accountId,self.agent.headquarters,self.agent.startingFaction,self.agent.credits,self.token)))
         self.ships[ship.symbol] = ship
         return ship
 
     def Get_Ship(self, shipSymbol):
+        if isinstance(shipSymbol,Ship):
+            shipSymbol = shipSymbol.symbol
         path = f"/my/ships/{shipSymbol}"
         r = self.my_req(path, "get")
         j = r.json()
@@ -1224,6 +1401,8 @@ class SpaceTraders:
         return self.ships[shipSymbol]
 
     def Get_Cargo(self, shipSymbol):
+        if isinstance(shipSymbol,Ship):
+            shipSymbol = shipSymbol.symbol
         path = f"/my/ships/{shipSymbol}/cargo"
         r = self.my_req(path, "get")
         j = r.json()
@@ -1239,6 +1418,8 @@ class SpaceTraders:
         return cargo
 
     def Orbit(self, shipSymbol):
+        if isinstance(shipSymbol,Ship):
+            shipSymbol = shipSymbol.symbol
         path = f"/my/ships/{shipSymbol}/orbit"
         r = self.my_req(path, "post")
         j = r.json()
@@ -1255,6 +1436,8 @@ class SpaceTraders:
 
     # refine
     def Chart(self, shipSymbol):
+        if isinstance(shipSymbol,Ship):
+            shipSymbol = shipSymbol.symbol
         path = f"/my/ships/{shipSymbol}/chart"
         r = self.my_req(path, "post")
         j = r.json()
@@ -1272,6 +1455,8 @@ class SpaceTraders:
         return (chart, waypoint)
 
     def Get_Cooldown(self, shipSymbol):
+        if isinstance(shipSymbol,Ship):
+            shipSymbol = shipSymbol.symbol
         path = f"/my/ships/{shipSymbol}/cooldown"
         r = self.my_req(path, "get")
         if r.status_code==204:
@@ -1286,6 +1471,8 @@ class SpaceTraders:
         return cooldown
 
     def Dock(self, shipSymbol):
+        if isinstance(shipSymbol,Ship):
+            shipSymbol = shipSymbol.symbol
         path = f"/my/ships/{shipSymbol}/dock"
         r = self.my_req(path, "post")
         j = r.json()
@@ -1301,6 +1488,8 @@ class SpaceTraders:
         return self.ships[shipSymbol].nav
 
     def Create_Survey(self, shipSymbol):
+        if isinstance(shipSymbol,Ship):
+            shipSymbol = shipSymbol.symbol
         path = f"/my/ships/{shipSymbol}/survey"
         r = self.my_req(path, "post")
         j = r.json()
@@ -1325,6 +1514,8 @@ class SpaceTraders:
         return (surveys, cooldown)
 
     def Extract(self, shipSymbol, survey: Survey = None):
+        if isinstance(shipSymbol,Ship):
+            shipSymbol = shipSymbol.symbol
         path = f"/my/ships/{shipSymbol}/extract"
         if survey:
             r = self.my_req(path, "post", json={"survey": survey.dict()})
@@ -1361,6 +1552,8 @@ class SpaceTraders:
     # jettison
 
     def Jump(self, shipSymbol, systemSymbol):
+        if isinstance(shipSymbol,Ship):
+            shipSymbol = shipSymbol.symbol
         path = f"/my/ships/{shipSymbol}/jump"
         r = self.my_req(path, "post", data={"systemSymbol": systemSymbol})
         j = r.json()
@@ -1378,6 +1571,8 @@ class SpaceTraders:
         return cooldown
 
     def Navigate(self, shipSymbol, waypointSymbol):
+        if isinstance(shipSymbol,Ship):
+            shipSymbol = shipSymbol.symbol
         path = f"/my/ships/{shipSymbol}/navigate"
         r = self.my_req(path, "post", data={"waypointSymbol": waypointSymbol})
         j = r.json()
@@ -1396,6 +1591,8 @@ class SpaceTraders:
         return (shipnav, shipfuel)
 
     def Warp(self, shipSymbol, waypointSymbol):
+        if isinstance(shipSymbol,Ship):
+            shipSymbol = shipSymbol.symbol
         path = f"/my/ships/{shipSymbol}/warp"
         r = self.my_req(path, "post", data={"waypointSymbol": waypointSymbol})
         j = r.json()
@@ -1414,6 +1611,8 @@ class SpaceTraders:
         return (shipnav, shipfuel)
 
     def Sell(self, shipSymbol, symbol, units):
+        if isinstance(shipSymbol,Ship):
+            shipSymbol = shipSymbol.symbol
         path = f"/my/ships/{shipSymbol}/sell"
         r = self.my_req(path, "post", data={"symbol": symbol, "units": units})
         j = r.json()
@@ -1427,8 +1626,9 @@ class SpaceTraders:
             self.ships[shipSymbol].cargo = ShipCargo(data["cargo"])
             if self.use_db:
                 with self.db_lock:
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.AGENT, (self.agent.symbol,self.agent.accountId,self.agent.headquarters,self.agent.startingFaction,self.agent.credits,self.token)))
                     self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPCARGO, [self.ships[shipSymbol]]))
-                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (None,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (transaction,self.ships[shipSymbol].nav.waypointSymbol,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
         return (self.agent, self.ships[shipSymbol].cargo, transaction)
 
     # scan systems
@@ -1436,6 +1636,8 @@ class SpaceTraders:
     # scan ships
     
     def Get_Mounts(self,shipSymbol):
+        if isinstance(shipSymbol,Ship):
+            shipSymbol = shipSymbol.symbol
         path = f"/my/ships/{shipSymbol}/mounts"
         r = self.my_req(path, "get")
         j = r.json()
@@ -1450,6 +1652,8 @@ class SpaceTraders:
             self.ships[shipSymbol].mounts = mounts
         return mounts
     def Install_Mount(self,shipSymbol,symbol):
+        if isinstance(shipSymbol,Ship):
+            shipSymbol = shipSymbol.symbol
         path = f"/my/ships/{shipSymbol}/mounts/install"
         r = self.my_req(path, "post",data={"symbol": symbol})
         j = r.json()
@@ -1465,8 +1669,13 @@ class SpaceTraders:
         if shipSymbol in self.ships:
             self.ships[shipSymbol].cargo = cargo
             self.ships[shipSymbol].mounts = mounts
+        if self.use_db:
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.AGENT, (self.agent.symbol,self.agent.accountId,self.agent.headquarters,self.agent.startingFaction,self.agent.credits,self.token)))
         return (mounts,cargo,transaction)
     def Remove_Mount(self,shipSymbol,symbol):
+        if isinstance(shipSymbol,Ship):
+            shipSymbol = shipSymbol.symbol
         path = f"/my/ships/{shipSymbol}/mounts/remove"
         r = self.my_req(path, "post",data={"symbol": symbol})
         j = r.json()
@@ -1482,10 +1691,15 @@ class SpaceTraders:
         if shipSymbol in self.ships:
             self.ships[shipSymbol].cargo = cargo
             self.ships[shipSymbol].mounts = mounts
+        if self.use_db:
+            with self.db_lock:
+                self.db_queue.append(Queue_Obj(Queue_Obj_Type.AGENT, (self.agent.symbol,self.agent.accountId,self.agent.headquarters,self.agent.startingFaction,self.agent.credits,self.token)))
         return (mounts,cargo,transaction)
     
     
     def Negotiate_Contract(self,shipSymbol):
+        if isinstance(shipSymbol,Ship):
+            shipSymbol = shipSymbol.symbol
         path = f"/my/ships/{shipSymbol}/negotiate/contract"
         r = self.my_req(path, "post")
         j = r.json()
@@ -1500,6 +1714,8 @@ class SpaceTraders:
         return contract
     
     def Refuel(self, shipSymbol):
+        if isinstance(shipSymbol,Ship):
+            shipSymbol = shipSymbol.symbol
         path = f"/my/ships/{shipSymbol}/refuel"
         r = self.my_req(path, "post")
         j = r.json()
@@ -1514,10 +1730,13 @@ class SpaceTraders:
             if self.use_db:
                 with self.db_lock:
                     self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPFUEL, self.ships[shipSymbol]))
-                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (None,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (transaction,self.ships[shipSymbol].nav.waypointSymbol,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.AGENT, (self.agent.symbol,self.agent.accountId,self.agent.headquarters,self.agent.startingFaction,self.agent.credits,self.token)))
         return (self.agent, fuel, transaction)
 
     def Purchase(self, shipSymbol, symbol, units):
+        if isinstance(shipSymbol,Ship):
+            shipSymbol = shipSymbol.symbol
         path = f"/my/ships/{shipSymbol}/purchase"
         r = self.my_req(path, "post", data={"symbol": symbol, "units": units})
         j = r.json()
@@ -1531,10 +1750,15 @@ class SpaceTraders:
             if self.use_db:
                 with self.db_lock:
                     self.db_queue.append(Queue_Obj(Queue_Obj_Type.SHIPCARGO, [self.ships[shipSymbol]]))
-                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (None,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.TRANSACTION, (transaction,self.ships[shipSymbol].nav.waypointSymbol,(datetime.utcnow(),self.agent.symbol,self.agent.credits))))
+                    self.db_queue.append(Queue_Obj(Queue_Obj_Type.AGENT, (self.agent.symbol,self.agent.accountId,self.agent.headquarters,self.agent.startingFaction,self.agent.credits,self.token)))
         return (self.agent, self.ships[shipSymbol].cargo, transaction)
 
     def Transfer(self, shipSymbol, symbol, units, recvShipSymbol):
+        if isinstance(shipSymbol,Ship):
+            shipSymbol = shipSymbol.symbol
+        if isinstance(recvShipSymbol,Ship):
+            recvShipSymbol = recvShipSymbol.symbol
         path = f"/my/ships/{shipSymbol}/transfer"
         r = self.my_req(
             path,
@@ -1563,6 +1787,4 @@ class SpaceTraders:
 if __name__ == "__main__":
     st = SpaceTraders()
     
-    if st.use_db:
-        while len(st.db_queue) > 0:
-            time.sleep(2)
+    st.exit()
