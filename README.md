@@ -1,5 +1,6 @@
 # spacetraders-sdk-v2
 Total rewrite to use no generated code
+Currently restructuring folders to be a package-able 
 
 ## Installation & Usage
 ```sh
