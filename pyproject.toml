@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling","requests","psycopg2-binary","python-dotenv"]
 build-backend = "hatchling.build"
 
 [project]
