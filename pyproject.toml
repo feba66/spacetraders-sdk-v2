@@ -3,8 +3,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "spacetraders_sdk_feba66"
-version = "2.0.1"
+name = "spacetraders_sdk"
+version = "2.0.3"
 authors = [
 	{ name="Felix Baumkötter", email="feba@feba66.de" },
 ]
@@ -20,3 +20,9 @@ classifiers = [
 [project.urls]
 "Homepage" = "https://github.com/feba66/spacetraders-sdk-v2"
 "Bug Tracker" = "https://github.com/feba66/spacetraders-sdk-v2/issues"
+
+[tool.autopep8]
+max_line_length = 120
+# in-place = true
+# recursive = true
+# aggressive = 3
