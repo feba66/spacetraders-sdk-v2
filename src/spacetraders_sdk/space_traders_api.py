@@ -7,20 +7,21 @@ import logging
 import requests
 import json
 import os
-from enums import Factions
+from space_traders_enums import FactionSymbol
 from ratelimit import BurstyLimiter, Limiter
-from helper import system_symbol_from_waypoint_symbol
+from space_traders_helper import system_symbol_from_waypoint_symbol
+from space_traders_logger import SpaceTradersLogger
 
 
 class SpaceTradersApi:
 
 	# region variables
 	server_url: str
+	name: str
 	session: requests.Session
-	logger: logging.Logger
+	logger: SpaceTradersLogger
 	log:bool
 	token: str
-	name: str
 	# endregion
 
 	def __init__(self,url="https://api.spacetraders.io/v2",name="ST",log=True) -> None:
@@ -34,29 +35,13 @@ class SpaceTradersApi:
 
 		# region logging
 		if log:
-			self.logger = logging.getLogger(f"SpaceTraders-{name}-{threading.current_thread().name}")
-			if not self.logger.hasHandlers():
-				self.logger.setLevel(logging.DEBUG)
-				formatter = logging.Formatter("%(asctime)s - %(thread)d - %(name)s - %(levelname)s - %(message)s")
-
-				ch = logging.StreamHandler()
-				ch.setLevel(logging.INFO)
-
-				fh = logging.FileHandler(f"{os.getenv('WORKING_FOLDER')}SpaceTraders-{name}.log", encoding="utf-8")
-
-				fh.setLevel(logging.DEBUG)
-
-				ch.setFormatter(formatter)
-				fh.setFormatter(formatter)
-
-				self.logger.addHandler(fh)
-				self.logger.addHandler(ch)
+			self.logger=SpaceTradersLogger("st-api")
 		# endregion
 
 
 	@BurstyLimiter(Limiter(2,1.05),Limiter(10,10.5))
 	def req_and_log(self, url: str, method: str, data=None, json=None):
-		r = self.session.request(method, self.SERVER_URL + url, data=data, json=json)
+		r = self.session.request(method, self.server_url + url, data=data, json=json)
 		if self.log:
 			self.logger.info(f"{r.request.method} {r.request.url} {r.status_code}")
 			self.logger.debug(f"{r.request.method} {r.request.url} {r.status_code} {r.text}")
@@ -89,7 +74,7 @@ class SpaceTradersApi:
 		self.session.headers.update({"Authorization": "Bearer " + token})
 
 	# region endpoints
-	def register(self, symbol: str, faction: Factions, email: str = None, login=True):
+	def register(self, symbol: str, faction: FactionSymbol, email: str = None, login=True):
 		path = "/register"
 		if 3 > len(symbol) > 14:
 			raise ValueError("symbol must be 3-14 characters long")

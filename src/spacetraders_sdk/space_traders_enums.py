@@ -12,7 +12,11 @@ class myEnum(Enum):
 
 
 # region Enums
-class Factions(myEnum):
+class ContractType(myEnum):
+    PROCUREMENT="PROCUREMENT",
+    TRANSPORT="TRANSPORT",
+    SHUTTLE="SHUTTLE"
+class FactionSymbol(myEnum):
     COSMIC = "COSMIC"
     VOID = "VOID"
     GALACTIC = "GALACTIC"

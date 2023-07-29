@@ -2,6 +2,15 @@
 Total rewrite to use no generated code
 Currently restructuring folders to be a package-able 
 
+## Structuring
+SpaceTradersApi     - Networking, Ratelimit, etc
+SpaceTradersDB      - Database Functions, etc
+SpaceTradersEnums   - Enums
+SpaceTradersObjects - Classes
+SpaceTradersHelper  - Helper functions to make life easier
+SpaceTradersSDK     - Combining all the modules
+
+# Old Readme:
 ## Installation & Usage
 ```sh
 pip install -r requirements.txt

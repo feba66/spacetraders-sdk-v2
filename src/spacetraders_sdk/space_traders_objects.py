@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
-from enums import (
+from space_traders_enums import (
     ContractType,
     FactionTraitSymbol,
     MarketTradeGoodSupply,

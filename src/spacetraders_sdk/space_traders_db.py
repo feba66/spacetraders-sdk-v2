@@ -3,16 +3,22 @@ from datetime import datetime
 from enum import Enum
 import os
 import threading
+import time
 from dotenv import find_dotenv, load_dotenv
 import psycopg2
-
-from enums import myEnum
-
+from sqlalchemy import create_engine,Engine,text,Connection
+from sqlalchemy.orm import sessionmaker
+from space_traders_enums import myEnum
+from space_traders_objects import Agent,Contract,Ship
+from space_traders_enums import MarketTradeGoodSupply,ContractType,FactionSymbol,FactionTraitSymbol,MarketTransactionType,ShipCrewRotation,ShipEngineType,ShipFrameType,ShipModuleType,ShipMountType,ShipNavFlightMode,ShipNavStatus,ShipReactorType,ShipType,SurveySize,SystemType,TradeSymbol,WaypointTraitSymbols,WaypointType
+from space_traders_db_schema import Base
 
 class Queue_Obj_Type(Enum):
+    AGENT = 19
     CONSUMPTION = 1
     EXTRACTION = 2
     FACTION = 3
+    JUMPGATE = 18
     LEADERBOARD = 4
     MARKET = 5
     REQUEST_METRIC = 6
@@ -27,8 +33,7 @@ class Queue_Obj_Type(Enum):
     SYSTEM = 15
     TRANSACTION = 16
     WAYPOINT = 17
-    JUMPGATE = 18
-    AGENT = 19
+    CONTRACT = 20
 
 
 @dataclass
@@ -37,13 +42,15 @@ class Queue_Obj:
     data: object
 
 
-class DB:
+class SpaceTradersDB:
     db_lock: threading.Lock
     db_queue: list[Queue_Obj]
     conn: any
     cur: any
+    engine:Engine
+    Session:sessionmaker
 
-    def __init__(self) -> None:
+    def __init__(self,) -> None:
         load_dotenv(find_dotenv(".env"))
         self.db_lock = threading.Lock()
         self.db_queue = []
@@ -59,6 +66,50 @@ class DB:
         self.conn = psycopg2.connect(dbname=db, user=user, password=os.getenv("DB_PASSWORD"), host=ip, port=port)
         self.conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
         self.cur = self.conn.cursor()
+        self.engine = create_engine(f"postgresql+psycopg2://{user}:{os.getenv('DB_PASSWORD')}@{ip}:{port}/{db}_test",echo=True)
+        self.Session = sessionmaker(self.engine)
+        Base.metadata.create_all(self.engine)
+        
+    def run(self):
+        self.create_enum_type("MARKETTRADEGOODSUPPLY",MarketTradeGoodSupply)
+        self.create_enum_type("MARKETTRANSACTIONTYPE",MarketTransactionType)
+        self.create_enum_type("SHIPENGINETYPE",ShipEngineType)
+        self.create_enum_type("SHIPFRAMETYPE",ShipFrameType)
+        self.create_enum_type("SHIPMOUNTTYPE",ShipMountType)
+        self.create_enum_type("SHIPMODULETYPE",ShipModuleType)
+        self.create_enum_type("SHIPNAVFLIGHTMODE",ShipNavFlightMode)
+        self.create_enum_type("SHIPNAVSTATUS",ShipNavStatus)
+        self.create_enum_type("SHIPREACTORTYPE",ShipReactorType)
+        self.create_enum_type("SHIPTYPE",ShipType)
+        self.create_enum_type("SYSTEMTYPE",SystemType)
+        self.create_enum_type("TRADESYMBOL",TradeSymbol)
+        self.create_enum_type("WAYPOINTTRAITSYMBOLS",WaypointTraitSymbols)
+        self.create_enum_type("WAYPOINTTYPE",WaypointType)
+        self.create_tables()
+        while True:
+            tmp: list[Queue_Obj] = []
+            if len(self.db_queue) > 0:
+                with self.db_lock:
+                    for _ in range(min(len(self.db_queue), 5)):
+                        tmp.append(self.db_queue.pop(0))
+                while len(tmp) > 0:
+                    q_obj = tmp.pop(0)
+                    print(q_obj.type)
+                    if q_obj.type == Queue_Obj_Type.SHIP:
+                        self.insert_ships(q_obj.data)
+                    elif q_obj.type == Queue_Obj_Type.SHIPFUEL:
+                        self.insert_ships_fuel(q_obj.data)
+                    elif q_obj.type == Queue_Obj_Type.SHIPCARGO:
+                        self.insert_ships_cargo(q_obj.data)
+                    elif q_obj.type == Queue_Obj_Type.SHIPNAV:
+                        self.insert_ships_nav(q_obj.data)
+                    elif q_obj.type == Queue_Obj_Type.AGENT:
+                        self.insert_agent(q_obj.data[0],q_obj.data[1])
+                    else:
+                        print(q_obj.type + "Not Implemented into DB!")
+            else:
+                time.sleep(0.01)
+    
 
     def create_enum_type(self, name, enum: myEnum):
         self.cur.execute(
@@ -135,14 +186,6 @@ class DB:
         tmp.close()
         self.connect(user,db,ip,port)
 
-    def insert_agent(self, data):
-        self.cur.execute(
-            f"""INSERT INTO AGENTS (SYMBOL, ACCOUNTID, HEADQUARTERS, STARTINGFACTION, CREDITS, TOKEN)
-                VALUES (%s,%s,%s,%s,%s,%s)
-                ON CONFLICT (SYMBOL) DO UPDATE SET CREDITS=excluded.CREDITS""",
-            list(data),
-        )
-
     def insert_jumpgates(self, data):
         wp, jumpgate = data
         temp = [wp, [cs.symbol for cs in jumpgate.connectedSystems]]
@@ -150,6 +193,88 @@ class DB:
         if len(temp) > 1:
             self.cur.execute(
                 f"""INSERT INTO JumpGateConnections (waypointSymbol,connections)
-                    VALUES {','.join([f'(%s, %s)' for _ in range(int(len(temp)/2))])} ON CONFLICT (waypointSymbol) DO NOTHING""",
+                VALUES {','.join([f'(%s, %s)' for _ in range(int(len(temp)/2))])} ON CONFLICT (waypointSymbol) DO NOTHING""",
                 list(temp),
             )
+
+    def insert_agent(self, agent:Agent,token:str):
+        self.cur.execute(
+            f"""INSERT INTO AGENTS (SYMBOL, ACCOUNTID, HEADQUARTERS, STARTINGFACTION, CREDITS, TOKEN)
+            VALUES (%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (SYMBOL) DO UPDATE SET CREDITS=excluded.CREDITS""",
+            [agent.symbol,agent.accountId,agent.headquarters,agent.startingFaction,agent.credits,token],
+        )
+    def insert_ships(self, ships:list[Ship]):
+        temp = []
+        for s in ships:
+            temp.extend(
+                [
+                    s.symbol,
+                    s.registration.factionSymbol,
+                    s.registration.role,
+                    s.frame.symbol.name,
+                    s.engine.symbol.name,
+                    s.engine.speed,
+                    [x.symbol.name for x in s.modules],
+                    [x.symbol.name for x in s.mounts],
+                    s.cargo.capacity,
+                ]
+            )
+        self.cur.execute(
+            f"""INSERT INTO SHIPS (SYMBOL, FACTION, ROLE, FRAME, ENGINE, SPEED, MODULES, MOUNTS, CARGO_CAPACITY)
+            VALUES {','.join([f'(%s, %s, %s, %s,%s, %s, %s, %s,%s)' for _ in range(int(len(temp)/9))])} 
+            ON CONFLICT (SYMBOL) DO NOTHING""",
+            temp
+        )
+        self.insert_ships_fuel(ships)
+        self.insert_ships_cargo(ships)
+    def insert_ships_fuel(self,ships: list[Ship]):
+        temp = []
+        for s in ships:
+            temp.extend([s.symbol, s.fuel.current, s.fuel.capacity])
+        self.cur.execute(
+            f"""INSERT INTO SHIPFUEL (SYMBOL, FUEL, CAPACITY)
+        VALUES {','.join([f'(%s,%s,%s)' for _ in range(int(len(temp)/3))])}
+        ON CONFLICT (SYMBOL) DO UPDATE SET FUEL=excluded.FUEL""",
+            list(temp),
+        )
+    def insert_ships_cargo(self,ships: list[Ship]):
+        temp = []
+        for s in ships:
+            for c in s.cargo.inventory:
+                temp.extend([s.symbol, c.symbol, c.units])
+        if len(temp)>0:
+            self.cur.execute(
+                f"""INSERT INTO SHIPCARGOS (SYMBOL, GOOD, UNITS)
+                VALUES {','.join([f'(%s, %s, %s)' for _ in range(int(len(temp)/3))])}
+                ON CONFLICT (SYMBOL, GOOD) DO UPDATE SET UNITS = excluded.UNITS""",
+                list(temp),
+            )
+    def insert_ships_nav(self,ships: list[Ship]):
+        temp = []
+        for s in ships:
+            temp.extend(
+                [
+                    s.symbol,
+                    s.nav.waypointSymbol,
+                    s.nav.route.departure.symbol,
+                    s.nav.route.destination.symbol,
+                    s.nav.route.arrival,
+                    s.nav.route.departureTime,
+                    s.nav.status.name,
+                    s.nav.flightMode.name,
+                ]
+            )
+        self.cur.execute(
+            f"""INSERT INTO SHIPNAVS (SYMBOL, WAYPOINTSYMBOL, DEPARTURE, DESTINATION, ARRIVAL, DEPARTURETIME, STATUS, FLIGHTMODE)
+            VALUES {','.join([f'(%s, %s, %s,%s, %s, %s,%s, %s)' for _ in range(int(len(temp)/8))])}
+            ON CONFLICT (SYMBOL) DO UPDATE SET WAYPOINTSYMBOL = excluded.WAYPOINTSYMBOL, DEPARTURE = excluded.DEPARTURE, DESTINATION = excluded.DESTINATION,ARRIVAL = excluded.ARRIVAL,DEPARTURETIME = excluded.DEPARTURETIME,STATUS = excluded.STATUS,FLIGHTMODE = excluded.FLIGHTMODE""",
+            list(temp),
+        )
+    
+    
+if __name__ == "__main__":
+    db = SpaceTradersDB()
+    result = db.al_conn.execute(text("select * from agents"))
+    db.al_conn.commit()
+    print(result.all())
